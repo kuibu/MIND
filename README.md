@@ -293,38 +293,7 @@ MIND 不只是标准化数据，也要标准化权限。
 
 这使 MIND 成为一个“可以被自动化使用”的系统，而不只是一个“可被查看”的系统。
 
-## 示例：从聊天到执行
-
-输入来自微信中的一句话：
-
-> 明天上午把合同发给我
-
-MIND 可以结合当前会话对象和历史上下文，把这句话转成：
-
-```json
-{
-  "type": "Task",
-  "title": "发送合同",
-  "recipient": "conversation_peer",
-  "deadline": "2026-03-23T12:00:00+08:00",
-  "linked_resource": "attachment_contract_v3",
-  "source": "wechat",
-  "confidence": 0.88,
-  "permissions": {
-    "read": ["owner", "assistant"],
-    "act": ["owner_approval_required"]
-  }
-}
-```
-
-随后 Agent 才有可能在正确上下文下执行：
-
-- 自动提醒
-- 自动定位对应文件
-- 自动生成回复草稿
-- 在用户审批后自动发送
-
-这就是 MIND 与普通聊天记录、普通笔记、普通 OCR 的本质区别：
+ MIND 与普通聊天记录、普通笔记、普通 OCR 的本质区别：
 
 **它的输出不是“看得见的信息”，而是“能被进一步执行的资源”。**
 
