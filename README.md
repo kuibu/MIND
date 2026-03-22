@@ -354,3 +354,26 @@ MIND 不只是一个数据层。
 
 在旧世界里，平台定义你能访问什么。  
 在新世界里，用户定义自己的数据如何被访问。
+
+## 当前实现
+
+仓库现在已经包含一版可编译的 Swift Package 骨架，优先服务于 `iPhone Capture -> Mac Ingest -> Local Perception -> Canonical Resources` 这条链路。
+
+当前已有：
+
+- `MINDProtocol`: session、keyframe、observation、GUI recipe 协议
+- `MINDSchemas`: canonical resources 与权限/证据模型
+- `MINDRecipes`: 默认页面解析 recipe 注册表
+- `MINDServices`: session buffer、frame sampler、vision extractor stub、session merger、in-memory repository、expense normalizer
+- `MINDPipelines`: 三条任务导向 pipeline
+
+本地验证：
+
+```bash
+swift test
+```
+
+## 延伸阅读
+
+- [任务牵引的架构草案](./docs/task-driven-architecture.md)
+- [Codex 分步编码提示词](./docs/codex-subtasks.md)
