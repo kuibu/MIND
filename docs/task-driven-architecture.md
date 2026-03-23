@@ -42,6 +42,23 @@
 
 而不是把系统建立在“隐形后台永久录屏”这个脆弱假设上。
 
+### 0.2 当前原型已经落地到哪里
+
+当前仓库里的 Swift 原型已经实现了这条最小闭环：
+
+- `iPhone SwiftUI App -> Bonjour 发现 -> NWConnection 推 keyframe`
+- `Mac SwiftUI App -> NWListener 接收 -> keyframe 落盘`
+- `LiveIngestCoordinator -> recipe 选择 -> heuristic extraction -> session merge`
+- `canonical commit -> 3 条任务面板刷新`
+
+这还不是最终架构，因为：
+
+- 视觉抽取目前仍是 `heuristic extractor`，不是本地 `MiniCPM-o 4.5`
+- 录屏目前以当前 App 会话和 simulator demo 为主，不是完整的全局录屏形态
+- canonical store 还是内存态，不是持久化数据库
+
+但它已经足以验证：目录分层、协议边界和任务导向 pipeline 的方向是对的。
+
 ## 1. 三个任务到底在逼系统具备什么能力
 
 ### 任务 A

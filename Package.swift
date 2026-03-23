@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "MINDSchemas", targets: ["MINDSchemas"]),
         .library(name: "MINDRecipes", targets: ["MINDRecipes"]),
         .library(name: "MINDServices", targets: ["MINDServices"]),
-        .library(name: "MINDPipelines", targets: ["MINDPipelines"])
+        .library(name: "MINDPipelines", targets: ["MINDPipelines"]),
+        .library(name: "MINDAppSupport", targets: ["MINDAppSupport"])
     ],
     targets: [
         .target(name: "MINDProtocol"),
@@ -32,9 +33,13 @@ let package = Package(
             name: "MINDPipelines",
             dependencies: ["MINDProtocol", "MINDSchemas", "MINDServices"]
         ),
+        .target(
+            name: "MINDAppSupport",
+            dependencies: ["MINDProtocol", "MINDSchemas", "MINDRecipes", "MINDServices", "MINDPipelines"]
+        ),
         .testTarget(
             name: "MINDPipelinesTests",
-            dependencies: ["MINDProtocol", "MINDSchemas", "MINDServices", "MINDPipelines"]
+            dependencies: ["MINDProtocol", "MINDSchemas", "MINDServices", "MINDPipelines", "MINDAppSupport"]
         )
     ]
 )

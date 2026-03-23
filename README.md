@@ -363,15 +363,37 @@ MIND 不只是一个数据层。
 
 - `MINDProtocol`: session、keyframe、observation、GUI recipe 协议
 - `MINDSchemas`: canonical resources 与权限/证据模型
-- `MINDRecipes`: 默认页面解析 recipe 注册表
-- `MINDServices`: session buffer、frame sampler、vision extractor stub、session merger、in-memory repository、expense normalizer
+- `MINDRecipes`: 微信 / 支付宝 / 美团 / 滴滴 / 抖音 / 快手 / 小红书 / 视频号的默认 recipe 注册表
+- `MINDServices`: session buffer、heuristic vision extractor、session merger、in-memory repository、expense normalizer
 - `MINDPipelines`: 三条任务导向 pipeline
+- `MINDAppSupport`: iOS/macOS app 共用 view model、capture preset、live ingest coordinator
+
+当前 app 原型已经打通的链路：
+
+- `iOS` 端用 SwiftUI 提供局域网发现、配对、采集预设选择、开始/结束推流
+- `iOS` 端在 simulator 下会按预设生成结构化 demo frame hint，并通过 `NWConnection` 发往 Mac
+- `macOS` 端通过 Bonjour + `NWListener` 接收 keyframe，落盘到本地热数据区
+- `macOS` 端把 keyframe 送入 live ingest coordinator，生成 observation preview、session merge 和 canonical commit
+- canonical commit 之后会立即刷新 3 个任务面板：消费汇总、微信附件检索、收藏时间线
 
 本地验证：
 
 ```bash
 swift test
 ```
+
+SwiftUI/Xcode 工程：
+
+```bash
+xcodegen generate
+open MINDApps.xcodeproj
+```
+
+当前已验证：
+
+- `swift test`
+- `xcodebuild -project MINDApps.xcodeproj -scheme MINDMacIngest CODE_SIGNING_ALLOWED=NO build`
+- `xcodebuild -project MINDApps.xcodeproj -scheme MINDiOSCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`
 
 ## 延伸阅读
 

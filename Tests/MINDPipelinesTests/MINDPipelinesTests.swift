@@ -1,4 +1,5 @@
 import XCTest
+import MINDAppSupport
 import MINDProtocol
 import MINDSchemas
 import MINDServices
@@ -56,6 +57,120 @@ final class MINDPipelinesTests: XCTestCase {
         XCTAssertEqual(results[1].title, "东京差旅咖啡地图")
         XCTAssertEqual(results[1].likeCountAtCollection, 89)
         XCTAssertLessThan(results[0].collectedAt, results[1].collectedAt)
+    }
+
+    func testLiveIngestCoordinatorCommitsWechatAttachmentFlow() {
+        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+        let sessionID = "session-wechat"
+
+        let started = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date("2026-03-20T08:58:00+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+
+        XCTAssertEqual(started?.stateLabel, "已建会话，等待关键帧")
+
+        let frameUpdate = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date("2026-03-20T08:58:03+08:00"),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: .wechat,
+                frameID: "frame-1",
+                note: CaptureIntentPreset.wechatAttachment.demoFrameHints[0],
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/frame-1.jpg"
+        )
+
+        XCTAssertEqual(frameUpdate?.session.keyframeCount, 1)
+        XCTAssertTrue(frameUpdate?.observationPreviews.contains(where: { $0.title.contains("宇树G1人形机器人操作经验手册.pdf") }) == true)
+
+        let completion = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-20T08:58:05+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat
+        ))
+
+        XCTAssertEqual(completion?.session.stateLabel, "会话已结束并完成 canonical commit")
+        XCTAssertTrue(completion?.commitSummaryLines.contains("attachment: 宇树G1人形机器人操作经验手册.pdf") == true)
+        XCTAssertTrue(completion?.pipelinePanels.first(where: { $0.id == "attachment" })?.lines.contains(where: { $0.contains("宇树G1人形机器人操作经验手册.pdf") }) == true)
+    }
+
+    func testLiveIngestCoordinatorCommitsExpenseFlowsIntoWeeklySummary() {
+        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+
+        ingestExpenseSession(
+            coordinator: coordinator,
+            sessionID: "session-alipay",
+            sentAt: "2026-03-17T10:15:00+08:00",
+            preset: .alipayExpense
+        )
+        ingestExpenseSession(
+            coordinator: coordinator,
+            sessionID: "session-meituan",
+            sentAt: "2026-03-19T20:00:00+08:00",
+            preset: .meituanExpense
+        )
+        ingestExpenseSession(
+            coordinator: coordinator,
+            sessionID: "session-didi",
+            sentAt: "2026-03-18T08:45:00+08:00",
+            preset: .didiTrip
+        )
+
+        let finalCompletion = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-18T08:45:05+08:00"),
+            sessionID: "session-didi",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .didi
+        ))
+
+        let expenseLines = finalCompletion?.pipelinePanels.first(where: { $0.id == "expense" })?.lines ?? []
+        XCTAssertTrue(expenseLines.contains("差旅: 86.0 CNY / 1 笔"))
+        XCTAssertTrue(expenseLines.contains("餐饮: 94.0 CNY / 2 笔"))
+    }
+
+    func testLiveIngestCoordinatorCommitsSavedVideoSnapshotsAcrossPlatforms() {
+        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+
+        ingestCollectionSession(
+            coordinator: coordinator,
+            sessionID: "session-douyin",
+            sentAt: "2026-03-16T21:00:00+08:00",
+            preset: .douyinCollection
+        )
+        ingestCollectionSession(
+            coordinator: coordinator,
+            sessionID: "session-xhs",
+            sentAt: "2026-03-18T18:20:00+08:00",
+            preset: .xiaohongshuCollection
+        )
+
+        let completion = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-18T18:20:05+08:00"),
+            sessionID: "session-xhs",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .xiaohongshu
+        ))
+
+        let savedLines = completion?.pipelinePanels.first(where: { $0.id == "saved-video" })?.lines ?? []
+        XCTAssertTrue(savedLines.first?.contains("douyin · 宇树 G1 上手体验 · 点赞 512") == true)
+        XCTAssertTrue(savedLines.last?.contains("xiaohongshu · 东京差旅咖啡地图 · 点赞 89") == true)
     }
 
     private func makeRepository() -> InMemoryMINDRepository {
@@ -226,5 +341,87 @@ final class MINDPipelinesTests: XCTestCase {
             fatalError("Invalid ISO8601 date: \(value)")
         }
         return date
+    }
+
+    private func ingestExpenseSession(
+        coordinator: LiveIngestCoordinator,
+        sessionID: String,
+        sentAt: String,
+        preset: CaptureIntentPreset
+    ) {
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date(sentAt),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: preset.platform,
+            note: preset.sessionNote
+        ))
+        _ = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date(sentAt),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: preset.platform,
+                frameID: sessionID + "-frame-1",
+                note: preset.demoFrameHints[0],
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/" + sessionID + ".jpg"
+        )
+        if preset != .didiTrip {
+            _ = coordinator.stopSession(from: StreamMessage(
+                kind: .stopSession,
+                sentAt: date(sentAt),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: preset.platform
+            ))
+        }
+    }
+
+    private func ingestCollectionSession(
+        coordinator: LiveIngestCoordinator,
+        sessionID: String,
+        sentAt: String,
+        preset: CaptureIntentPreset
+    ) {
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date(sentAt),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: preset.platform,
+            note: preset.sessionNote
+        ))
+        _ = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date(sentAt),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: preset.platform,
+                frameID: sessionID + "-frame-1",
+                note: preset.demoFrameHints[0],
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/" + sessionID + ".jpg"
+        )
+        if preset != .xiaohongshuCollection {
+            _ = coordinator.stopSession(from: StreamMessage(
+                kind: .stopSession,
+                sentAt: date(sentAt),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: preset.platform
+            ))
+        }
     }
 }

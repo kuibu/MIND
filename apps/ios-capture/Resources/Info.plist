@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>MIND Capture</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_mindcap._tcp</string>
+    </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>MIND 需要在局域网中发现并连接你的 Mac，以实时上传录屏关键帧。</string>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+    <key>UILaunchScreen</key>
+    <dict/>
+</dict>
+</plist>
