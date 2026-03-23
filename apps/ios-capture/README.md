@@ -22,10 +22,10 @@ open MINDApps.xcodeproj
 - 使用 `NWConnection` 把关键帧消息实时发往 Mac
 - 在 simulator 下按 `CaptureIntentPreset` 生成结构化 demo frame hint，便于验证 canonical commit
 - 在设备上通过 `ReplayKit` 采集当前 App 的屏幕帧并按 1fps 节流发送
+- 通过共享 `App Group` 把采集预设和配对结果同步给 `Broadcast Upload Extension`
 
 当前还没有接入：
 
-- Broadcast Upload Extension 形态的全局录屏
 - 更稳的重传 / chunk ack 协议
 - 真正的极小 ring buffer 落盘与崩溃恢复
 - 更细的配对信任模型和二维码配对
@@ -47,3 +47,4 @@ open MINDApps.xcodeproj
 
 - 设备运行需要允许本地网络访问
 - 当前 `Info.plist` 已包含 `NSLocalNetworkUsageDescription` 与 `NSBonjourServices`
+- 如果需要系统级录屏，要从 App 内调起 `Broadcast Upload Extension`

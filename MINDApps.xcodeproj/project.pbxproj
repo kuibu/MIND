@@ -8,18 +8,48 @@
 
 /* Begin PBXBuildFile section */
 		0EB77E5E5C52B958B4FB7684 /* MINDAppSupport in Frameworks */ = {isa = PBXBuildFile; productRef = FBBE66115F3BD0B95BBD2D27 /* MINDAppSupport */; };
+		2EFAE2EBB56ED4D8FD945BC2 /* MINDBroadcastUpload.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C50E68BD2E9EAD68B27530CD /* MINDBroadcastUpload.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5F29673A52D754E6818CE275 /* MINDMacIngestApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA05B70054201E01356DAC61 /* MINDMacIngestApp.swift */; };
 		6AE97EE95FB66BBF9C710935 /* MINDAppSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 76276DE04E4A391F8F42B5CB /* MINDAppSupport */; };
+		76B25A9A085FF1877A90C94A /* MINDAppSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 6BF6F379286CF99DB195A45B /* MINDAppSupport */; };
 		7CDADC2BB47406BD3903B0B3 /* IOSCaptureRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4515ACF10FCA34D411DA8 /* IOSCaptureRuntime.swift */; };
+		A7A69682E79BCB04492DFC03 /* MINDProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = C4113907D38E4044A8CAB4F7 /* MINDProtocol */; };
 		C04C42FB49D2968C50673340 /* MINDiOSCaptureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDABBE87E67BC77F6D1ECD0B /* MINDiOSCaptureApp.swift */; };
 		C8768445F1C48B228B646474 /* MacIngestRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 971DB8784EC9DA1FBC339A45 /* MacIngestRuntime.swift */; };
+		DD81A51DFF2DE67265F4BFD2 /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9143A71D8A59D7117C012E36 /* SampleHandler.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9DD791EF5427A2F8E5E49D71 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDD8EDA801B2D3B911E2F75F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 474EB0BE4D31C058F46E8F6F;
+			remoteInfo = MINDBroadcastUpload;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		28C449AF5456AB1853440443 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2EFAE2EBB56ED4D8FD945BC2 /* MINDBroadcastUpload.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		057D4CFE93B126782F093680 /* MIND */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MIND; path = .; sourceTree = SOURCE_ROOT; };
 		1EF4FF07728582998E0FEE5B /* MINDMacIngest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MINDMacIngest.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9143A71D8A59D7117C012E36 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		971DB8784EC9DA1FBC339A45 /* MacIngestRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacIngestRuntime.swift; sourceTree = "<group>"; };
 		A1C4515ACF10FCA34D411DA8 /* IOSCaptureRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCaptureRuntime.swift; sourceTree = "<group>"; };
+		C50E68BD2E9EAD68B27530CD /* MINDBroadcastUpload.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MINDBroadcastUpload.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D06F3C79B4234C2F0D03B3A0 /* MINDiOSCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MINDiOSCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DDABBE87E67BC77F6D1ECD0B /* MINDiOSCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MINDiOSCaptureApp.swift; sourceTree = "<group>"; };
 		EA05B70054201E01356DAC61 /* MINDMacIngestApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MINDMacIngestApp.swift; sourceTree = "<group>"; };
@@ -42,17 +72,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D5C9C4A8D6CA45579A057879 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7A69682E79BCB04492DFC03 /* MINDProtocol in Frameworks */,
+				76B25A9A085FF1877A90C94A /* MINDAppSupport in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0FC6DFD3F7D943728BB465FB /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				971DB8784EC9DA1FBC339A45 /* MacIngestRuntime.swift */,
-				EA05B70054201E01356DAC61 /* MINDMacIngestApp.swift */,
+				A1C4515ACF10FCA34D411DA8 /* IOSCaptureRuntime.swift */,
+				DDABBE87E67BC77F6D1ECD0B /* MINDiOSCaptureApp.swift */,
 			);
 			name = Sources;
-			path = "apps/mac-ingest/Sources";
+			path = "apps/ios-capture/Sources";
 			sourceTree = "<group>";
 		};
 		273DE8EDA17A45105554014B = {
@@ -61,8 +100,19 @@
 				4F9ABE787A13674AB30C1FED /* Packages */,
 				B5120043E2ADBFF039A0318C /* Sources */,
 				0FC6DFD3F7D943728BB465FB /* Sources */,
+				29D0B3C9D1EB648E3672F1EE /* Sources */,
 				CB97E984DD8C91D264F24C2D /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		29D0B3C9D1EB648E3672F1EE /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				971DB8784EC9DA1FBC339A45 /* MacIngestRuntime.swift */,
+				EA05B70054201E01356DAC61 /* MINDMacIngestApp.swift */,
+			);
+			name = Sources;
+			path = "apps/mac-ingest/Sources";
 			sourceTree = "<group>";
 		};
 		4F9ABE787A13674AB30C1FED /* Packages */ = {
@@ -76,16 +126,16 @@
 		B5120043E2ADBFF039A0318C /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				A1C4515ACF10FCA34D411DA8 /* IOSCaptureRuntime.swift */,
-				DDABBE87E67BC77F6D1ECD0B /* MINDiOSCaptureApp.swift */,
+				9143A71D8A59D7117C012E36 /* SampleHandler.swift */,
 			);
 			name = Sources;
-			path = "apps/ios-capture/Sources";
+			path = "apps/ios-broadcast-upload/Sources";
 			sourceTree = "<group>";
 		};
 		CB97E984DD8C91D264F24C2D /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				C50E68BD2E9EAD68B27530CD /* MINDBroadcastUpload.appex */,
 				D06F3C79B4234C2F0D03B3A0 /* MINDiOSCapture.app */,
 				1EF4FF07728582998E0FEE5B /* MINDMacIngest.app */,
 			);
@@ -101,10 +151,12 @@
 			buildPhases = (
 				41C55534BB714A7C7186DF20 /* Sources */,
 				C124697EC6922F5F15FD90A0 /* Frameworks */,
+				28C449AF5456AB1853440443 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				56CF3E34F4602BA67E9BEFC2 /* PBXTargetDependency */,
 			);
 			name = MINDiOSCapture;
 			packageProductDependencies = (
@@ -113,6 +165,26 @@
 			productName = MINDiOSCapture;
 			productReference = D06F3C79B4234C2F0D03B3A0 /* MINDiOSCapture.app */;
 			productType = "com.apple.product-type.application";
+		};
+		474EB0BE4D31C058F46E8F6F /* MINDBroadcastUpload */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 108FE1E3E31E80396DCF55A2 /* Build configuration list for PBXNativeTarget "MINDBroadcastUpload" */;
+			buildPhases = (
+				DF73E74DAF0AAE7E6C19AA92 /* Sources */,
+				D5C9C4A8D6CA45579A057879 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MINDBroadcastUpload;
+			packageProductDependencies = (
+				C4113907D38E4044A8CAB4F7 /* MINDProtocol */,
+				6BF6F379286CF99DB195A45B /* MINDAppSupport */,
+			);
+			productName = MINDBroadcastUpload;
+			productReference = C50E68BD2E9EAD68B27530CD /* MINDBroadcastUpload.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		9299F08CEFEEF9B128A13976 /* MINDMacIngest */ = {
 			isa = PBXNativeTarget;
@@ -145,6 +217,9 @@
 					181F2A25B53063F1EC0A5C00 = {
 						ProvisioningStyle = Automatic;
 					};
+					474EB0BE4D31C058F46E8F6F = {
+						ProvisioningStyle = Automatic;
+					};
 					9299F08CEFEEF9B128A13976 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -167,6 +242,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				474EB0BE4D31C058F46E8F6F /* MINDBroadcastUpload */,
 				9299F08CEFEEF9B128A13976 /* MINDMacIngest */,
 				181F2A25B53063F1EC0A5C00 /* MINDiOSCapture */,
 			);
@@ -192,7 +268,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DF73E74DAF0AAE7E6C19AA92 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD81A51DFF2DE67265F4BFD2 /* SampleHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		56CF3E34F4602BA67E9BEFC2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 474EB0BE4D31C058F46E8F6F /* MINDBroadcastUpload */;
+			targetProxy = 9DD791EF5427A2F8E5E49D71 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0C966E864E506C9B68996DE1 /* Debug */ = {
@@ -218,6 +310,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "apps/ios-capture/Resources/MINDiOSCapture.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -303,6 +396,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "apps/ios-capture/Resources/MINDiOSCapture.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -314,6 +408,26 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.kuibu.mind.ioscapture;
 				PRODUCT_NAME = "MIND iOS Capture";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8BF93D11660C6BBCC815C8C4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "apps/ios-broadcast-upload/Resources/MINDBroadcastUpload.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "apps/ios-broadcast-upload/Resources/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kuibu.mind.ioscapture.broadcastupload;
+				PRODUCT_NAME = "MIND Broadcast Upload";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -337,6 +451,26 @@
 				SDKROOT = macosx;
 			};
 			name = Release;
+		};
+		BE23129F22A23A12A0279C9E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "apps/ios-broadcast-upload/Resources/MINDBroadcastUpload.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "apps/ios-broadcast-upload/Resources/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kuibu.mind.ioscapture.broadcastupload;
+				PRODUCT_NAME = "MIND Broadcast Upload";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 		C3866B12CBEDB0351125119F /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -399,6 +533,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		108FE1E3E31E80396DCF55A2 /* Build configuration list for PBXNativeTarget "MINDBroadcastUpload" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE23129F22A23A12A0279C9E /* Debug */,
+				8BF93D11660C6BBCC815C8C4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		29BD6A6A82C01D9445FACF7B /* Build configuration list for PBXProject "MINDApps" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -436,9 +579,17 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		6BF6F379286CF99DB195A45B /* MINDAppSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MINDAppSupport;
+		};
 		76276DE04E4A391F8F42B5CB /* MINDAppSupport */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MINDAppSupport;
+		};
+		C4113907D38E4044A8CAB4F7 /* MINDProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MINDProtocol;
 		};
 		FBBE66115F3BD0B95BBD2D27 /* MINDAppSupport */ = {
 			isa = XCSwiftPackageProductDependency;

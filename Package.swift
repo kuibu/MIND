@@ -27,7 +27,10 @@ let package = Package(
         ),
         .target(
             name: "MINDServices",
-            dependencies: ["MINDProtocol", "MINDSchemas", "MINDRecipes"]
+            dependencies: ["MINDProtocol", "MINDSchemas", "MINDRecipes"],
+            resources: [
+                .process("Resources")
+            ]
         ),
         .target(
             name: "MINDPipelines",

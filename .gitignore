@@ -3,6 +3,7 @@
 DerivedData/
 Package.resolved
 runtime/
+.venv/
 .DS_Store
 *.xcuserstate
 xcuserdata/

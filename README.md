@@ -364,17 +364,31 @@ MIND 不只是一个数据层。
 - `MINDProtocol`: session、keyframe、observation、GUI recipe 协议
 - `MINDSchemas`: canonical resources 与权限/证据模型
 - `MINDRecipes`: 微信 / 支付宝 / 美团 / 滴滴 / 抖音 / 快手 / 小红书 / 视频号的默认 recipe 注册表
-- `MINDServices`: session buffer、heuristic vision extractor、session merger、in-memory repository、expense normalizer
+- `MINDServices`: MiniCPM-o 4.5 Python bridge、heuristic fallback extractor、session merger、in-memory repository、JSON snapshot canonical store、expense normalizer
 - `MINDPipelines`: 三条任务导向 pipeline
 - `MINDAppSupport`: iOS/macOS app 共用 view model、capture preset、live ingest coordinator
 
 当前 app 原型已经打通的链路：
 
 - `iOS` 端用 SwiftUI 提供局域网发现、配对、采集预设选择、开始/结束推流
+- `iOS` 端包含 `Broadcast Upload Extension`，可以把系统级录屏关键帧经共享 app-group 设置实时发往 Mac
 - `iOS` 端在 simulator 下会按预设生成结构化 demo frame hint，并通过 `NWConnection` 发往 Mac
 - `macOS` 端通过 Bonjour + `NWListener` 接收 keyframe，落盘到本地热数据区
-- `macOS` 端把 keyframe 送入 live ingest coordinator，生成 observation preview、session merge 和 canonical commit
+- `macOS` 端把 keyframe 送入 `LiveIngestCoordinator`，优先通过常驻 MiniCPM bridge 进程做关键帧抽取，失败时回退到 heuristic extractor
+- `macOS` 端会把 canonical resources 持久化到本地 `Application Support/MIND/runtime/canonical-store.json`
 - canonical commit 之后会立即刷新 3 个任务面板：消费汇总、微信附件检索、收藏时间线
+
+MiniCPM 本地运行前提：
+
+```bash
+./scripts/setup_minicpm_env.sh
+export MIND_MINICPM_PYTHON="$PWD/.venv/minicpm/bin/python"
+```
+
+可选环境变量：
+
+- `MIND_MINICPM_MODEL_ID`: 默认 `openbmb/MiniCPM-o-4_5`
+- `MIND_MINICPM_DEVICE`: 默认 `auto`，会优先尝试 `cuda` / `mps` / `cpu`
 
 本地验证：
 
@@ -399,3 +413,6 @@ open MINDApps.xcodeproj
 
 - [任务牵引的架构草案](./docs/task-driven-architecture.md)
 - [Codex 分步编码提示词](./docs/codex-subtasks.md)
+- [iOS Capture App 说明](./apps/ios-capture/README.md)
+- [iOS Broadcast Upload Extension 说明](./apps/ios-broadcast-upload/README.md)
+- [Mac Ingest App 说明](./apps/mac-ingest/README.md)

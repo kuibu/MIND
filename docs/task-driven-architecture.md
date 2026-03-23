@@ -47,15 +47,16 @@
 当前仓库里的 Swift 原型已经实现了这条最小闭环：
 
 - `iPhone SwiftUI App -> Bonjour 发现 -> NWConnection 推 keyframe`
+- `iPhone Broadcast Upload Extension -> App Group 共享配置 -> 系统级录屏关键帧推流`
 - `Mac SwiftUI App -> NWListener 接收 -> keyframe 落盘`
-- `LiveIngestCoordinator -> recipe 选择 -> heuristic extraction -> session merge`
-- `canonical commit -> 3 条任务面板刷新`
+- `LiveIngestCoordinator -> recipe 选择 -> MiniCPM-o 4.5 bridge extraction -> session merge`
+- `canonical commit -> JSON snapshot persistent store -> 3 条任务面板刷新`
 
 这还不是最终架构，因为：
 
-- 视觉抽取目前仍是 `heuristic extractor`，不是本地 `MiniCPM-o 4.5`
-- 录屏目前以当前 App 会话和 simulator demo 为主，不是完整的全局录屏形态
-- canonical store 还是内存态，不是持久化数据库
+- `MiniCPM-o 4.5` 目前通过本地 Python bridge 接入，OCR / ASR 还没有拆成独立服务
+- Broadcast Upload Extension 已经落下第一版，但传输层还没有 ack / 重传 / 断点恢复
+- canonical store 已经持久化为本地 JSON snapshot，但还不是多表数据库或事件日志存储
 
 但它已经足以验证：目录分层、协议边界和任务导向 pipeline 的方向是对的。
 

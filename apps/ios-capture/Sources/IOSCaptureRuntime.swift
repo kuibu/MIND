@@ -19,6 +19,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
 
     private let browser = BonjourBrowserService()
     private let client = CaptureStreamClient()
+    private let sharedSettingsStore = CaptureSharedSettingsStore()
     private lazy var captureSource = ReplayKitCaptureSource(
         onFrame: { [weak self] payload in
             self?.sendFrame(payload)
@@ -53,6 +54,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
     }
 
     func onAppear() {
+        viewModel.selectedPreset = sharedSettingsStore.load().selectedPreset
         viewModel.updateConnection(status: .discovering)
         browser.start()
     }
@@ -66,6 +68,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         client.connect(to: endpoint)
         viewModel.updateConnection(status: .paired, pairedNode: node)
         viewModel.logEvent(title: "已选择目标节点", detail: "开始连接 \(node.name)。")
+        persistSharedSettings(relayNode: node)
 
         let hello = StreamMessage(
             kind: .hello,
@@ -110,6 +113,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         )
 
         viewModel.logEvent(title: "已选择采集预设", detail: "\(preset.title) · \(preset.subtitle)")
+        persistSharedSettings(relayNode: destination)
         captureSource.start(with: preset)
     }
 
@@ -134,6 +138,10 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         viewModel.endExternalSession()
     }
 
+    func syncSharedSettings() {
+        persistSharedSettings(relayNode: viewModel.pairedNode)
+    }
+
     private func sendFrame(_ payload: CapturedFramePayload) {
         guard let currentSessionID = currentSessionID else { return }
 
@@ -155,6 +163,24 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
 
         client.send(message)
         viewModel.updateBufferedChunkCount(min(6, sentFrameCount))
+    }
+
+    private func persistSharedSettings(relayNode: DiscoveredMacNode?) {
+        let relay = relayNode.flatMap { node -> CaptureRelayConfiguration? in
+            let parts = node.id.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+            return CaptureRelayConfiguration(
+                serviceName: parts[0],
+                serviceDomain: parts[1],
+                displayName: node.name
+            )
+        }
+        sharedSettingsStore.save(
+            CaptureSharedSettings(
+                selectedPresetRawValue: viewModel.selectedPreset.rawValue,
+                relay: relay
+            )
+        )
     }
 }
 

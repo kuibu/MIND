@@ -1,4 +1,5 @@
 import SwiftUI
+import ReplayKit
 import MINDAppSupport
 
 @main
@@ -47,6 +48,9 @@ private struct IOSCaptureRootView: View {
         .onAppear {
             runtime.onAppear()
         }
+        .onChange(of: viewModel.selectedPreset) { _ in
+            runtime.syncSharedSettings()
+        }
     }
 
     private var statusHero: some View {
@@ -82,6 +86,16 @@ private struct IOSCaptureRootView: View {
                 }
             }
             .toggleStyle(SwitchToggleStyle(tint: Color.black.opacity(0.75)))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("全局录屏入口")
+                    .font(.subheadline.weight(.semibold))
+                Text("需要采集系统级界面时，改用 Broadcast Upload Extension。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                BroadcastPickerTile(extensionBundleID: "com.kuibu.mind.ioscapture.broadcastupload")
+                    .frame(height: 52)
+            }
 
             HStack(spacing: 12) {
                 Button {
@@ -166,6 +180,21 @@ private struct IOSCaptureRootView: View {
             }
         }
         .cardStyle()
+    }
+}
+
+private struct BroadcastPickerTile: UIViewRepresentable {
+    let extensionBundleID: String
+
+    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+        let view = RPSystemBroadcastPickerView(frame: .zero)
+        view.preferredExtension = extensionBundleID
+        view.showsMicrophoneButton = false
+        return view
+    }
+
+    func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {
+        uiView.preferredExtension = extensionBundleID
     }
 }
 

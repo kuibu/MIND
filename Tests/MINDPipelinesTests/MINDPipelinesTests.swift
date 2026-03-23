@@ -60,7 +60,7 @@ final class MINDPipelinesTests: XCTestCase {
     }
 
     func testLiveIngestCoordinatorCommitsWechatAttachmentFlow() {
-        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+        let coordinator = LiveIngestCoordinator(store: nil, now: { self.date("2026-03-22T00:00:00+08:00") })
         let sessionID = "session-wechat"
 
         let started = coordinator.startSession(from: StreamMessage(
@@ -108,7 +108,7 @@ final class MINDPipelinesTests: XCTestCase {
     }
 
     func testLiveIngestCoordinatorCommitsExpenseFlowsIntoWeeklySummary() {
-        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+        let coordinator = LiveIngestCoordinator(store: nil, now: { self.date("2026-03-22T00:00:00+08:00") })
 
         ingestExpenseSession(
             coordinator: coordinator,
@@ -144,7 +144,7 @@ final class MINDPipelinesTests: XCTestCase {
     }
 
     func testLiveIngestCoordinatorCommitsSavedVideoSnapshotsAcrossPlatforms() {
-        let coordinator = LiveIngestCoordinator(now: { self.date("2026-03-22T00:00:00+08:00") })
+        let coordinator = LiveIngestCoordinator(store: nil, now: { self.date("2026-03-22T00:00:00+08:00") })
 
         ingestCollectionSession(
             coordinator: coordinator,
@@ -171,6 +171,57 @@ final class MINDPipelinesTests: XCTestCase {
         let savedLines = completion?.pipelinePanels.first(where: { $0.id == "saved-video" })?.lines ?? []
         XCTAssertTrue(savedLines.first?.contains("douyin · 宇树 G1 上手体验 · 点赞 512") == true)
         XCTAssertTrue(savedLines.last?.contains("xiaohongshu · 东京差旅咖啡地图 · 点赞 89") == true)
+    }
+
+    func testDiskCanonicalStorePersistsCommittedResources() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let store = DiskCanonicalStore(fileURL: tempDirectory.appendingPathComponent("canonical-store.json"))
+        let coordinator = LiveIngestCoordinator(store: store, extractor: HeuristicVisionExtractor(), now: {
+            self.date("2026-03-22T00:00:00+08:00")
+        })
+
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date("2026-03-20T08:58:00+08:00"),
+            sessionID: "persist-wechat",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+        _ = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date("2026-03-20T08:58:03+08:00"),
+                sessionID: "persist-wechat",
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: .wechat,
+                frameID: "frame-1",
+                note: CaptureIntentPreset.wechatAttachment.demoFrameHints[0],
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/frame-1.jpg"
+        )
+        _ = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-20T08:58:05+08:00"),
+            sessionID: "persist-wechat",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat
+        ))
+
+        let loadedRepository = try store.load()
+        let pipeline = AttachmentSearchPipeline(repository: loadedRepository)
+        let results = pipeline.run(
+            participantName: "陈攀",
+            fileNameQuery: "宇树G1人形机器人操作经验手册.pdf"
+        )
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.fileName, "宇树G1人形机器人操作经验手册.pdf")
     }
 
     private func makeRepository() -> InMemoryMINDRepository {

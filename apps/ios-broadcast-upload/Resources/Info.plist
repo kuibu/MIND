@@ -11,16 +11,24 @@
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>CFBundleDisplayName</key>
-    <string>MIND Capture</string>
+    <string>MIND Broadcast Upload</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_mindcap._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>MIND 需要在局域网中发现并连接你的 Mac，以实时上传录屏关键帧。</string>
-    <key>UIApplicationSupportsIndirectInputEvents</key>
-    <true/>
-    <key>UILaunchScreen</key>
-    <dict/>
+    <string>MIND Broadcast Upload 需要把录屏关键帧实时传到你的 Mac。</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>RPBroadcastProcessMode</key>
+            <string>RPBroadcastProcessModeSampleBuffer</string>
+        </dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.broadcast-services-upload</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).SampleHandler</string>
+    </dict>
 </dict>
 </plist>

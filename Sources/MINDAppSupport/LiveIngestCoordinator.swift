@@ -28,6 +28,18 @@ public struct LiveSessionCompletion {
 }
 
 public final class LiveIngestCoordinator {
+    public static let defaultStoreURL: URL = {
+        let baseDirectory: URL
+#if os(macOS)
+        baseDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+#else
+        baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+#endif
+        return baseDirectory.appendingPathComponent("MIND/runtime/canonical-store.json", isDirectory: false)
+    }()
+
     private struct SessionState {
         let manifest: CaptureSessionManifest
         let sourceDeviceName: String
@@ -39,6 +51,7 @@ public final class LiveIngestCoordinator {
     }
 
     private let repository: InMemoryMINDRepository
+    private let store: DiskCanonicalStore?
     private let recipeRegistry: RecipeRegistry
     private let extractor: VisionExtractor
     private let merger: SessionMerger
@@ -48,14 +61,22 @@ public final class LiveIngestCoordinator {
     private var sessionStates: [CaptureSessionID: SessionState] = [:]
 
     public init(
-        repository: InMemoryMINDRepository = InMemoryMINDRepository(),
+        repository: InMemoryMINDRepository? = nil,
+        store: DiskCanonicalStore? = DiskCanonicalStore(fileURL: LiveIngestCoordinator.defaultStoreURL),
         recipeRegistry: RecipeRegistry = RecipeRegistry(),
-        extractor: VisionExtractor = HeuristicVisionExtractor(),
+        extractor: VisionExtractor = PreferredVisionExtractor(primary: MiniCPMBridgeExtractor()),
         merger: SessionMerger = SessionMerger(),
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init
     ) {
-        self.repository = repository
+        self.store = store
+        if let repository = repository {
+            self.repository = repository
+        } else if let store = store, let loaded = try? store.load() {
+            self.repository = loaded
+        } else {
+            self.repository = InMemoryMINDRepository()
+        }
         self.recipeRegistry = recipeRegistry
         self.extractor = extractor
         self.merger = merger
@@ -340,16 +361,19 @@ public final class LiveIngestCoordinator {
     }
 
     private func commit(merged: MergedSessionObservations, state: SessionState) -> [String] {
+        let summary: [String]
         switch merged.platform {
         case .wechat:
-            return commitWechatSession(merged: merged, state: state)
+            summary = commitWechatSession(merged: merged, state: state)
         case .alipay, .meituan, .didi:
-            return commitExpenseSession(merged: merged, state: state)
+            summary = commitExpenseSession(merged: merged, state: state)
         case .douyin, .kuaishou, .xiaohongshu, .channels:
-            return commitCollectionSession(merged: merged, state: state)
+            summary = commitCollectionSession(merged: merged, state: state)
         case .manual:
-            return ["manual session: no canonical commit"]
+            summary = ["manual session: no canonical commit"]
         }
+        try? store?.persist(repository: repository)
+        return summary
     }
 
     private func commitWechatSession(merged: MergedSessionObservations, state: SessionState) -> [String] {

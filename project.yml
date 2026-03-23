@@ -25,8 +25,31 @@ targets:
         PRODUCT_NAME: MIND iOS Capture
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: apps/ios-capture/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: apps/ios-capture/Resources/MINDiOSCapture.entitlements
         CODE_SIGN_STYLE: Automatic
     dependencies:
+      - package: MINDCore
+        product: MINDAppSupport
+      - target: MINDBroadcastUpload
+        embed: true
+
+  MINDBroadcastUpload:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - apps/ios-broadcast-upload/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kuibu.mind.ioscapture.broadcastupload
+        PRODUCT_NAME: MIND Broadcast Upload
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: apps/ios-broadcast-upload/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: apps/ios-broadcast-upload/Resources/MINDBroadcastUpload.entitlements
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: MINDCore
+        product: MINDProtocol
       - package: MINDCore
         product: MINDAppSupport
 
