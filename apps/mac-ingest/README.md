@@ -20,7 +20,7 @@ open MINDApps.xcodeproj
 - 用 SwiftUI 展示 Mac 作为 ingest node 的主界面
 - 通过 Bonjour + `NWListener` 作为局域网 ingest node 接收来自 iPhone 的关键帧消息
 - 把收到的 keyframe 落到本地热数据目录
-- 通过 `LiveIngestCoordinator` 把消息送入 recipe 选择、MiniCPM bridge 抽取、session merge、canonical commit
+- 通过 `LiveIngestCoordinator` 把消息送入 recipe 选择、`Ollama MiniCPM -> Python MiniCPM bridge -> heuristic` 抽取链、session merge、canonical commit
 - 展示 session、最近抽取、GUI recipes 和 3 条 task pipeline 的实时结果
 - 把 canonical resources 持久化到本地 JSON snapshot store
 

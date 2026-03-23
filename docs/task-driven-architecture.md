@@ -54,7 +54,7 @@
 
 这还不是最终架构，因为：
 
-- `MiniCPM-o 4.5` 目前通过本地 Python bridge 接入，OCR / ASR 还没有拆成独立服务
+- `MiniCPM-o 4.5` 目前已经支持 `Ollama` 本机调用和本地 Python bridge 两条路径，OCR / ASR 还没有拆成独立服务
 - Broadcast Upload Extension 已经落下第一版，但传输层还没有 ack / 重传 / 断点恢复
 - canonical store 已经持久化为本地 JSON snapshot，但还不是多表数据库或事件日志存储
 

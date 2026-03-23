@@ -64,7 +64,7 @@ public final class LiveIngestCoordinator {
         repository: InMemoryMINDRepository? = nil,
         store: DiskCanonicalStore? = DiskCanonicalStore(fileURL: LiveIngestCoordinator.defaultStoreURL),
         recipeRegistry: RecipeRegistry = RecipeRegistry(),
-        extractor: VisionExtractor = PreferredVisionExtractor(primary: MiniCPMBridgeExtractor()),
+        extractor: VisionExtractor = VisionExtractorFactory.defaultExtractor(),
         merger: SessionMerger = SessionMerger(),
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init

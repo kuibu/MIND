@@ -364,7 +364,7 @@ MIND 不只是一个数据层。
 - `MINDProtocol`: session、keyframe、observation、GUI recipe 协议
 - `MINDSchemas`: canonical resources 与权限/证据模型
 - `MINDRecipes`: 微信 / 支付宝 / 美团 / 滴滴 / 抖音 / 快手 / 小红书 / 视频号的默认 recipe 注册表
-- `MINDServices`: MiniCPM-o 4.5 Python bridge、heuristic fallback extractor、session merger、in-memory repository、JSON snapshot canonical store、expense normalizer
+- `MINDServices`: Ollama MiniCPM extractor、本地 Python MiniCPM bridge、heuristic fallback extractor、session merger、in-memory repository、JSON snapshot canonical store、expense normalizer
 - `MINDPipelines`: 三条任务导向 pipeline
 - `MINDAppSupport`: iOS/macOS app 共用 view model、capture preset、live ingest coordinator
 
@@ -374,11 +374,31 @@ MIND 不只是一个数据层。
 - `iOS` 端包含 `Broadcast Upload Extension`，可以把系统级录屏关键帧经共享 app-group 设置实时发往 Mac
 - `iOS` 端在 simulator 下会按预设生成结构化 demo frame hint，并通过 `NWConnection` 发往 Mac
 - `macOS` 端通过 Bonjour + `NWListener` 接收 keyframe，落盘到本地热数据区
-- `macOS` 端把 keyframe 送入 `LiveIngestCoordinator`，优先通过常驻 MiniCPM bridge 进程做关键帧抽取，失败时回退到 heuristic extractor
+- `macOS` 端把 keyframe 送入 `LiveIngestCoordinator`，默认按 `Ollama MiniCPM -> Python MiniCPM bridge -> heuristic` 顺序做关键帧抽取
 - `macOS` 端会把 canonical resources 持久化到本地 `Application Support/MIND/runtime/canonical-store.json`
 - canonical commit 之后会立即刷新 3 个任务面板：消费汇总、微信附件检索、收藏时间线
 
 MiniCPM 本地运行前提：
+
+如果你已经在本机通过 Ollama 安装了模型，默认就会优先走这条链路：
+
+```bash
+ollama run openbmb/minicpm-o4.5
+```
+
+也可以直接用脚本单独做本地烟雾测试：
+
+```bash
+./scripts/test_local_ollama_minicpm.sh /path/to/frame.png
+```
+
+代码默认会访问本地 `http://127.0.0.1:11434`，模型默认名是 `openbmb/minicpm-o4.5:latest`。可选覆盖：
+
+- `MIND_OLLAMA_HOST`
+- `MIND_OLLAMA_MODEL_ID`
+- `MIND_OLLAMA_KEEPALIVE`
+
+如果你希望继续走 Python bridge，再准备下面这条环境即可：
 
 ```bash
 ./scripts/setup_minicpm_env.sh

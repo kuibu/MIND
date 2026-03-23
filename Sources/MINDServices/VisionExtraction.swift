@@ -9,7 +9,7 @@ public struct MiniCPMRuntimeDescriptor: Equatable {
     public init(
         modelID: String = "MiniCPM-o-4.5",
         runsLocallyOnMac: Bool = true,
-        notes: String = "Primary path uses a local MiniCPM-o 4.5 bridge; heuristic extraction is retained only as a fallback."
+        notes: String = "Primary path uses local Ollama MiniCPM or a Python MiniCPM bridge; heuristic extraction is retained only as a fallback."
     ) {
         self.modelID = modelID
         self.runsLocallyOnMac = runsLocallyOnMac
@@ -115,6 +115,104 @@ public struct MiniCPMBridgeConfiguration: Equatable {
         self.modelID = modelID
         self.device = device
         self.enableThinking = enableThinking
+    }
+}
+
+public struct OllamaMiniCPMConfiguration: Equatable {
+    public let hostURL: URL
+    public let modelID: String
+    public let keepAlive: String
+    public let requestTimeout: TimeInterval
+
+    public init(
+        hostURL: URL = URL(string: ProcessInfo.processInfo.environment["MIND_OLLAMA_HOST"] ?? "http://127.0.0.1:11434")!,
+        modelID: String = ProcessInfo.processInfo.environment["MIND_OLLAMA_MODEL_ID"] ?? "openbmb/minicpm-o4.5:latest",
+        keepAlive: String = ProcessInfo.processInfo.environment["MIND_OLLAMA_KEEPALIVE"] ?? "15m",
+        requestTimeout: TimeInterval = 120
+    ) {
+        self.hostURL = hostURL
+        self.modelID = modelID
+        self.keepAlive = keepAlive
+        self.requestTimeout = requestTimeout
+    }
+}
+
+public final class OllamaMiniCPMExtractor: VisionExtractor {
+#if os(macOS)
+    private struct OllamaRequest: Encodable {
+        let model: String
+        let prompt: String
+        let images: [String]
+        let stream: Bool
+        let format: String
+        let keepAlive: String
+        let options: OllamaOptions
+    }
+
+    private struct OllamaOptions: Encodable {
+        let temperature: Double
+    }
+
+    private struct OllamaResponse: Decodable {
+        let response: String
+        let error: String?
+    }
+
+    private let configuration: OllamaMiniCPMConfiguration
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+#endif
+
+    public init(configuration: OllamaMiniCPMConfiguration = OllamaMiniCPMConfiguration()) {
+#if os(macOS)
+        self.configuration = configuration
+#endif
+    }
+
+    public func extract(frame: FrameContext, using recipe: GUIRecipe) throws -> ObservationBatch {
+#if os(macOS)
+        guard !frame.keyframe.imagePath.isEmpty else {
+            throw VisionExtractorError.imagePathMissing(frameID: frame.keyframe.id)
+        }
+
+        let imageURL = URL(fileURLWithPath: frame.keyframe.imagePath)
+        guard FileManager.default.fileExists(atPath: imageURL.path) else {
+            throw VisionExtractorError.imagePathMissing(frameID: frame.keyframe.id)
+        }
+
+        let imageData = try Data(contentsOf: imageURL)
+        let requestBody = OllamaRequest(
+            model: configuration.modelID,
+            prompt: StructuredPromptBuilder.makePrompt(for: recipe),
+            images: [imageData.base64EncodedString()],
+            stream: false,
+            format: "json",
+            keepAlive: configuration.keepAlive,
+            options: OllamaOptions(temperature: 0)
+        )
+
+        var request = URLRequest(url: configuration.hostURL.appendingPathComponent("api/generate"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = configuration.requestTimeout
+        request.httpBody = try encoder.encode(requestBody)
+
+        let responseData = try SyncURLSession.execute(request)
+        let response = try decoder.decode(OllamaResponse.self, from: responseData)
+        if let error = response.error, !error.isEmpty {
+            throw VisionExtractorError.bridgeFailed(error)
+        }
+
+        let fields = StructuredPromptBuilder.extractFields(from: response.response)
+        return ObservationBatchFieldMapper.makeBatch(
+            fields: fields,
+            rawText: response.response,
+            frame: frame,
+            recipe: recipe
+        )
+#else
+        throw VisionExtractorError.bridgeFailed("Ollama MiniCPM extractor is only available on macOS")
+#endif
     }
 }
 
@@ -285,6 +383,22 @@ public final class PreferredVisionExtractor: VisionExtractor {
     }
 }
 
+public enum VisionExtractorFactory {
+    public static func defaultExtractor() -> VisionExtractor {
+#if os(macOS)
+        return PreferredVisionExtractor(
+            primary: OllamaMiniCPMExtractor(),
+            fallback: PreferredVisionExtractor(
+                primary: MiniCPMBridgeExtractor(),
+                fallback: HeuristicVisionExtractor()
+            )
+        )
+#else
+        return HeuristicVisionExtractor()
+#endif
+    }
+}
+
 #if os(macOS)
 private final class MiniCPMBridgeSession {
     private let process = Process()
@@ -357,7 +471,106 @@ private extension NSLock {
         return try body()
     }
 }
+
+private enum SyncURLSession {
+    static func execute(_ request: URLRequest) throws -> Data {
+        let semaphore = DispatchSemaphore(value: 0)
+        let session = URLSession(configuration: {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = request.timeoutInterval
+            configuration.timeoutIntervalForResource = request.timeoutInterval
+            return configuration
+        }())
+
+        var result: Result<Data, Error>?
+        let task = session.dataTask(with: request) { data, response, error in
+            defer { semaphore.signal() }
+
+            if let error = error {
+                result = .failure(error)
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                result = .failure(VisionExtractorError.bridgeFailed("Ollama returned a non-HTTP response"))
+                return
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                let body = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                result = .failure(VisionExtractorError.bridgeFailed("Ollama returned HTTP \(httpResponse.statusCode): \(body)"))
+                return
+            }
+
+            result = .success(data ?? Data())
+        }
+
+        task.resume()
+        semaphore.wait()
+        session.finishTasksAndInvalidate()
+
+        switch result {
+        case .success(let data):
+            return data
+        case .failure(let error):
+            throw error
+        case .none:
+            throw VisionExtractorError.bridgeFailed("Ollama request finished without a result")
+        }
+    }
+}
 #endif
+
+private enum StructuredPromptBuilder {
+    static func makePrompt(for recipe: GUIRecipe) -> String {
+        let fieldLines: [String] = recipe.extractionSchema.fields.map { field -> String in
+            let requiredText = field.required ? "required" : "optional"
+            return #"- "\#(field.name)" (\#(requiredText)): \#(field.description)"#
+        }
+
+        return (
+            [
+                "You are extracting structured GUI data from a single keyframe.",
+                "Platform: \(recipe.platform.rawValue).",
+                "Page kind: \(recipe.pageKind).",
+                recipe.prompt,
+                "Return one strict JSON object and nothing else.",
+                "If a field is unavailable, use null.",
+                "Schema fields:"
+            ] + fieldLines
+        ).joined(separator: "\n")
+    }
+
+    static func extractFields(from rawText: String) -> [String: String] {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            let start = trimmed.firstIndex(of: "{"),
+            let end = trimmed.lastIndex(of: "}")
+        else {
+            return [:]
+        }
+
+        let jsonSlice = trimmed[start...end]
+        guard let data = String(jsonSlice).data(using: .utf8) else {
+            return [:]
+        }
+
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+
+        return object.reduce(into: [String: String]()) { partialResult, item in
+            switch item.value {
+            case let value as String:
+                partialResult[item.key] = value
+            case let value as NSNumber:
+                partialResult[item.key] = value.stringValue
+            default:
+                break
+            }
+        }
+    }
+}
 
 private enum ObservationBatchFieldMapper {
     static func makeBatch(
