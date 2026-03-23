@@ -39,6 +39,22 @@ public struct LiveSessionCompletion {
     }
 }
 
+public struct LiveReviewCorrection {
+    public let commitSummaryLines: [String]
+    public let pipelinePanels: [PipelinePanelItem]
+    public let appliedToCommittedSession: Bool
+
+    public init(
+        commitSummaryLines: [String],
+        pipelinePanels: [PipelinePanelItem],
+        appliedToCommittedSession: Bool
+    ) {
+        self.commitSummaryLines = commitSummaryLines
+        self.pipelinePanels = pipelinePanels
+        self.appliedToCommittedSession = appliedToCommittedSession
+    }
+}
+
 public final class LiveIngestCoordinator {
     public static let defaultStoreURL: URL = {
         let baseDirectory: URL
@@ -67,6 +83,11 @@ public final class LiveIngestCoordinator {
         var savedPathsByFrameID: [FrameID: String]
     }
 
+    private struct ReviewContext {
+        let frame: FrameContext
+        let recipe: GUIRecipe
+    }
+
     private let repository: InMemoryMINDRepository
     private let store: CanonicalStore?
     private let recipeRegistry: RecipeRegistry
@@ -76,8 +97,9 @@ public final class LiveIngestCoordinator {
     private let now: () -> Date
 
     private var sessionStates: [CaptureSessionID: SessionState] = [:]
+    private var completedReviewSessions: [CaptureSessionID: SessionState] = [:]
     private var reviewQueue: [LowConfidenceReviewItem] = []
-    private var reviewFrames: [String: FrameContext] = [:]
+    private var reviewContexts: [String: ReviewContext] = [:]
 
     public init(
         repository: InMemoryMINDRepository? = nil,
@@ -138,9 +160,13 @@ public final class LiveIngestCoordinator {
         reviewQueue
     }
 
+    public func pipelinePanels() -> [PipelinePanelItem] {
+        buildPipelinePanels()
+    }
+
     public func replaySample(forReviewID reviewID: String, expectedFields: [String: String]) -> RecipeReplaySample? {
         guard let reviewItem = reviewQueue.first(where: { $0.id == reviewID }),
-              let frame = reviewFrames[reviewID] else {
+              let context = reviewContexts[reviewID] else {
             return nil
         }
 
@@ -156,14 +182,78 @@ public final class LiveIngestCoordinator {
             ),
             recipeID: reviewItem.recipeID,
             recipeVersion: reviewItem.recipeVersion,
-            frame: frame,
+            frame: context.frame,
             expectedFields: expectedFields
         )
     }
 
     public func resolveReviewItem(_ reviewID: String) {
+        let sessionID = reviewQueue.first(where: { $0.id == reviewID })?.sessionID
         reviewQueue.removeAll { $0.id == reviewID }
-        reviewFrames.removeValue(forKey: reviewID)
+        reviewContexts.removeValue(forKey: reviewID)
+        if let sessionID = sessionID,
+           reviewQueue.contains(where: { $0.sessionID == sessionID }) == false {
+            completedReviewSessions.removeValue(forKey: sessionID)
+        }
+    }
+
+    public func applyReviewCorrection(_ reviewID: String, correctedFields: [String: String]) -> LiveReviewCorrection? {
+        guard let reviewItem = reviewQueue.first(where: { $0.id == reviewID }),
+              let context = reviewContexts[reviewID] else {
+            return nil
+        }
+
+        let correctedBatch = ObservationBatchBuilder.makeBatch(
+            fields: correctedFields,
+            rawText: context.frame.keyframe.transcriptHint ?? context.frame.keyframe.ocrText.joined(separator: "\n"),
+            frame: context.frame,
+            recipe: context.recipe
+        )
+        let missingRequiredFields = context.recipe.extractionSchema.fields
+            .filter { $0.required }
+            .map(\.name)
+            .filter { fieldName in
+                guard let value = correctedBatch.extractedFields[fieldName] else { return true }
+                return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        guard missingRequiredFields.isEmpty else {
+            return nil
+        }
+
+        let sessionID = reviewItem.sessionID
+        if var activeState = sessionStates[sessionID] {
+            activeState = replacingBatch(in: activeState, with: correctedBatch)
+            sessionStates[sessionID] = activeState
+            resolveReviewItem(reviewID)
+            return LiveReviewCorrection(
+                commitSummaryLines: ["review correction queued for live session: \(sessionID.rawValue)"],
+                pipelinePanels: buildPipelinePanels(),
+                appliedToCommittedSession: false
+            )
+        }
+
+        guard var completedState = completedReviewSessions[sessionID] else {
+            return nil
+        }
+
+        completedState = replacingBatch(in: completedState, with: correctedBatch)
+        completedReviewSessions[sessionID] = completedState
+
+        repository.removeResources(derivedFromSession: sessionID)
+        let summaryLines: [String]
+        if let merged = merger.merge(completedState.batches) {
+            summaryLines = commit(merged: merged, state: completedState)
+        } else {
+            persistRepository()
+            summaryLines = ["corrected session produced no merged observations"]
+        }
+
+        resolveReviewItem(reviewID)
+        return LiveReviewCorrection(
+            commitSummaryLines: summaryLines,
+            pipelinePanels: buildPipelinePanels(),
+            appliedToCommittedSession: true
+        )
     }
 
     public func startSession(from message: StreamMessage) -> IngestSessionCard? {
@@ -248,7 +338,7 @@ public final class LiveIngestCoordinator {
         let newReviewItems = reviewItem(for: batch, recipe: state.recipe, state: state).map { item -> [LowConfidenceReviewItem] in
             if reviewQueue.contains(where: { $0.id == item.id }) == false {
                 reviewQueue.insert(item, at: 0)
-                reviewFrames[item.id] = frameContext
+                reviewContexts[item.id] = ReviewContext(frame: frameContext, recipe: state.recipe)
             }
             return [item]
         } ?? []
@@ -295,6 +385,11 @@ public final class LiveIngestCoordinator {
         }
 
         let commitSummaryLines = commit(merged: merged, state: state)
+        if reviewQueue.contains(where: { $0.sessionID == sessionID }) {
+            completedReviewSessions[sessionID] = state
+        } else {
+            completedReviewSessions.removeValue(forKey: sessionID)
+        }
         let session = makeSessionCard(
             sessionID: sessionID,
             sourceDeviceName: state.sourceDeviceName,
@@ -443,8 +538,22 @@ public final class LiveIngestCoordinator {
         case .manual:
             summary = ["manual session: no canonical commit"]
         }
-        try? store?.persist(repository: repository)
+        persistRepository()
         return summary
+    }
+
+    private func replacingBatch(in state: SessionState, with correctedBatch: ObservationBatch) -> SessionState {
+        var updatedState = state
+        if let index = updatedState.batches.firstIndex(where: { $0.frameID == correctedBatch.frameID }) {
+            updatedState.batches[index] = correctedBatch
+        } else {
+            updatedState.batches.append(correctedBatch)
+        }
+        return updatedState
+    }
+
+    private func persistRepository() {
+        try? store?.persist(repository: repository)
     }
 
     private func commitWechatSession(merged: MergedSessionObservations, state: SessionState) -> [String] {

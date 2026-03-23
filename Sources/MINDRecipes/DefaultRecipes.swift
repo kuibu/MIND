@@ -134,28 +134,45 @@ public enum DefaultRecipes {
 }
 
 public final class RecipeRegistry {
-    private var recipesByID: [String: GUIRecipe]
+    private var recipesByID: [String: [Int: GUIRecipe]]
 
     public init(recipes: [GUIRecipe] = DefaultRecipes.all) {
-        var storage: [String: GUIRecipe] = [:]
+        var storage: [String: [Int: GUIRecipe]] = [:]
         for recipe in recipes {
-            storage[recipe.id] = recipe
+            var versions = storage[recipe.id] ?? [:]
+            versions[recipe.version] = recipe
+            storage[recipe.id] = versions
         }
         self.recipesByID = storage
     }
 
     public func recipe(id: String) -> GUIRecipe? {
-        recipesByID[id]
+        guard let versions = recipesByID[id], let latestVersion = versions.keys.max() else {
+            return nil
+        }
+        return versions[latestVersion]
+    }
+
+    public func recipe(id: String, version: Int) -> GUIRecipe? {
+        recipesByID[id]?[version]
     }
 
     public func recipes(for platform: SourcePlatform) -> [GUIRecipe] {
         recipesByID.values
+            .flatMap(\.values)
             .filter { $0.platform == platform }
-            .sorted { $0.id < $1.id }
+            .sorted {
+                if $0.id == $1.id {
+                    return $0.version > $1.version
+                }
+                return $0.id < $1.id
+            }
     }
 
     public func register(_ recipe: GUIRecipe) {
-        recipesByID[recipe.id] = recipe
+        var versions = recipesByID[recipe.id] ?? [:]
+        versions[recipe.version] = recipe
+        recipesByID[recipe.id] = versions
     }
 
     public func defaultRecipe(for platform: SourcePlatform) -> GUIRecipe? {

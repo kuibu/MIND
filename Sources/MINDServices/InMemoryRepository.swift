@@ -78,6 +78,42 @@ public final class InMemoryMINDRepository {
     public func add(metricSnapshot: MetricSnapshot) { metricSnapshots.append(metricSnapshot) }
     public func add(collectionEvent: CollectionEvent) { collectionEvents.append(collectionEvent) }
 
+    public func upsert(identity: Identity) { replaceOrAppend(&identities, with: identity, id: \.id) }
+    public func upsert(conversation: Conversation) { replaceOrAppend(&conversations, with: conversation, id: \.id) }
+    public func upsert(message: Message) { replaceOrAppend(&messages, with: message, id: \.id) }
+    public func upsert(attachment: Attachment) { replaceOrAppend(&attachments, with: attachment, id: \.id) }
+    public func upsert(fileAsset: FileAsset) { replaceOrAppend(&fileAssets, with: fileAsset, id: \.id) }
+    public func upsert(merchant: Merchant) { replaceOrAppend(&merchants, with: merchant, id: \.id) }
+    public func upsert(order: Order) { replaceOrAppend(&orders, with: order, id: \.id) }
+    public func upsert(trip: Trip) { replaceOrAppend(&trips, with: trip, id: \.id) }
+    public func upsert(expense: Expense) { replaceOrAppend(&expenses, with: expense, id: \.id) }
+    public func upsert(contentItem: ContentItem) { replaceOrAppend(&contentItems, with: contentItem, id: \.id) }
+    public func upsert(metricSnapshot: MetricSnapshot) { replaceOrAppend(&metricSnapshots, with: metricSnapshot, id: \.id) }
+    public func upsert(collectionEvent: CollectionEvent) { replaceOrAppend(&collectionEvents, with: collectionEvent, id: \.id) }
+
+    public func removeResources(derivedFromSession sessionID: CaptureSessionID) {
+        let normalizedSessionID = sessionID.rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let evidencePrefix = "ev:" + normalizedSessionID + "|"
+        let fallbackLocatorPrefix = "frame://\(sessionID.rawValue)/"
+
+        let hasSessionEvidence: ([EvidenceRef]) -> Bool = { refs in
+            refs.contains { ref in
+                ref.id.hasPrefix(evidencePrefix) || ref.locator.hasPrefix(fallbackLocatorPrefix)
+            }
+        }
+
+        conversations.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        messages.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        attachments.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        fileAssets.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        expenses.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        contentItems.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        metricSnapshots.removeAll { hasSessionEvidence($0.evidenceRefs) }
+        collectionEvents.removeAll { hasSessionEvidence($0.evidenceRefs) }
+    }
+
     public func merchant(id: String?) -> Merchant? {
         guard let id = id else { return nil }
         return merchants.first { $0.id == id }
@@ -163,5 +199,18 @@ public final class InMemoryMINDRepository {
 
     private func normalize(_ input: String) -> String {
         input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func replaceOrAppend<Resource>(
+        _ storage: inout [Resource],
+        with resource: Resource,
+        id: KeyPath<Resource, String>
+    ) {
+        let identifier = resource[keyPath: id]
+        if let index = storage.firstIndex(where: { $0[keyPath: id] == identifier }) {
+            storage[index] = resource
+        } else {
+            storage.append(resource)
+        }
     }
 }

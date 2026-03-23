@@ -36,20 +36,20 @@ public final class StubVisionExtractor: VisionExtractor {
         self.outputs = outputs
     }
 
-    public func register(_ batch: ObservationBatch, for frameID: FrameID, recipeID: String) {
-        outputs[key(frameID: frameID, recipeID: recipeID)] = batch
+    public func register(_ batch: ObservationBatch, for frameID: FrameID, recipeID: String, recipeVersion: Int = 1) {
+        outputs[key(frameID: frameID, recipeID: recipeID, recipeVersion: recipeVersion)] = batch
     }
 
     public func extract(frame: FrameContext, using recipe: GUIRecipe) throws -> ObservationBatch {
-        let lookupKey = key(frameID: frame.keyframe.id, recipeID: recipe.id)
+        let lookupKey = key(frameID: frame.keyframe.id, recipeID: recipe.id, recipeVersion: recipe.version)
         guard let batch = outputs[lookupKey] else {
             throw VisionExtractorError.missingStub(frameID: frame.keyframe.id, recipeID: recipe.id)
         }
         return batch
     }
 
-    private func key(frameID: FrameID, recipeID: String) -> String {
-        frameID.rawValue + "#" + recipeID
+    private func key(frameID: FrameID, recipeID: String, recipeVersion: Int) -> String {
+        frameID.rawValue + "#" + recipeID + "#v" + String(recipeVersion)
     }
 }
 
@@ -396,6 +396,22 @@ public enum VisionExtractorFactory {
 #else
         return HeuristicVisionExtractor()
 #endif
+    }
+}
+
+public enum ObservationBatchBuilder {
+    public static func makeBatch(
+        fields: [String: String],
+        rawText: String,
+        frame: FrameContext,
+        recipe: GUIRecipe
+    ) -> ObservationBatch {
+        ObservationBatchFieldMapper.makeBatch(
+            fields: fields,
+            rawText: rawText,
+            frame: frame,
+            recipe: recipe
+        )
     }
 }
 

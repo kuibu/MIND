@@ -1,4 +1,5 @@
 import XCTest
+import Network
 import MINDAppSupport
 import MINDRecipes
 import MINDProtocol
@@ -106,6 +107,123 @@ final class MINDPipelinesTests: XCTestCase {
         XCTAssertEqual(completion?.session.stateLabel, "会话已结束并完成 canonical commit")
         XCTAssertTrue(completion?.commitSummaryLines.contains("attachment: 宇树G1人形机器人操作经验手册.pdf") == true)
         XCTAssertTrue(completion?.pipelinePanels.first(where: { $0.id == "attachment" })?.lines.contains(where: { $0.contains("宇树G1人形机器人操作经验手册.pdf") }) == true)
+    }
+
+    func testReliableStreamClientSmokeTestCommitsWechatAttachmentOverSocket() throws {
+        let relayReady = expectation(description: "relay ready")
+        let clientConnected = expectation(description: "client connected")
+        let sessionCommitted = expectation(description: "session committed")
+        let pendingDrained = expectation(description: "pending drained")
+
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let relay = SmokeIngestRelay(frameRoot: tempDirectory, now: { self.date("2026-03-22T00:00:00+08:00") })
+        var endpoint: NWEndpoint?
+        var completion: LiveSessionCompletion?
+        relay.onCompletion = { value in
+            completion = value
+            sessionCommitted.fulfill()
+        }
+        try relay.start { readyEndpoint in
+            endpoint = readyEndpoint
+            relayReady.fulfill()
+        }
+
+        let client = ReliableStreamClient(
+            queue: DispatchQueue(label: "mind.tests.smoke.client"),
+            reconnectDelay: 0.2,
+            resendInterval: 0.2,
+            heartbeatInterval: 10
+        )
+        var didReportConnected = false
+        var sawPendingMessages = false
+        var didDrainPending = false
+        client.onStateChange = { state in
+            guard state == "已连接", didReportConnected == false else { return }
+            didReportConnected = true
+            clientConnected.fulfill()
+        }
+        client.onPendingCountChange = { count in
+            if count > 0 {
+                sawPendingMessages = true
+            }
+            if sawPendingMessages && count == 0 && didDrainPending == false {
+                didDrainPending = true
+                pendingDrained.fulfill()
+            }
+        }
+
+        defer {
+            client.disconnect()
+            relay.stop()
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+
+        wait(for: [relayReady], timeout: 2.0)
+        client.connect(to: try XCTUnwrap(endpoint))
+        wait(for: [clientConnected], timeout: 2.0)
+
+        let deviceID = "iphone-smoke"
+        let deviceName = "Smoke iPhone"
+        let sessionID = "socket-smoke-wechat"
+        let frameID = "socket-smoke-frame-1"
+        let imageBase64 = Data("smoke-image".utf8).base64EncodedString()
+
+        client.send(StreamMessage(
+            kind: .hello,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            platformHint: .wechat,
+            note: "ios-capture paired"
+        ))
+        client.send(StreamMessage(
+            kind: .startSession,
+            sessionID: sessionID,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+        client.send(StreamMessage(
+            kind: .keyframe,
+            sessionID: sessionID,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            platformHint: .wechat,
+            frameID: frameID,
+            note: CaptureIntentPreset.wechatAttachment.demoFrameHints[0],
+            imageBase64: imageBase64,
+            chunkSequence: 1,
+            width: 1179,
+            height: 2556
+        ))
+        client.send(StreamMessage(
+            kind: .stopSession,
+            sessionID: sessionID,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            platformHint: .wechat
+        ))
+        client.disconnectWhenDrained(timeout: 2.0)
+
+        wait(for: [sessionCommitted, pendingDrained], timeout: 5.0)
+
+        let committed = try XCTUnwrap(completion)
+        XCTAssertEqual(relay.receivedMessageKinds(), [.hello, .startSession, .keyframe, .stopSession])
+        XCTAssertEqual(committed.session.stateLabel, "会话已结束并完成 canonical commit")
+        XCTAssertTrue(committed.commitSummaryLines.contains("attachment: 宇树G1人形机器人操作经验手册.pdf"))
+        XCTAssertTrue(
+            committed.pipelinePanels
+                .first(where: { $0.id == "attachment" })?
+                .lines
+                .contains("宇树G1人形机器人操作经验手册.pdf · 陈攀 · 陈攀") == true
+        )
+        XCTAssertTrue(
+            relay.persistedFramePaths().contains {
+                $0.hasSuffix("/\(sessionID)/\(frameID).jpg")
+            }
+        )
     }
 
     func testLiveIngestCoordinatorCommitsExpenseFlowsIntoWeeklySummary() {
@@ -401,6 +519,81 @@ final class MINDPipelinesTests: XCTestCase {
         XCTAssertEqual(reports.first?.fieldSummaries.first(where: { $0.fieldName == "merchant_name" })?.matchedCount, 2)
     }
 
+    func testRecipeEvaluationHarnessUsesExactRecipeVersion() throws {
+        let recipeV1 = GUIRecipe(
+            id: "demo.manual",
+            version: 1,
+            platform: .manual,
+            pageKind: "test",
+            description: "v1",
+            prompt: "v1",
+            extractionSchema: ExtractionSchemaDescriptor(
+                resourceType: "ManualObservation",
+                fields: [ExtractionField(name: "version_marker", description: "Version marker")]
+            ),
+            retentionPolicy: .none,
+            confidenceThreshold: 0.8
+        )
+        let recipeV2 = GUIRecipe(
+            id: "demo.manual",
+            version: 2,
+            platform: .manual,
+            pageKind: "test",
+            description: "v2",
+            prompt: "v2",
+            extractionSchema: ExtractionSchemaDescriptor(
+                resourceType: "ManualObservation",
+                fields: [ExtractionField(name: "version_marker", description: "Version marker")]
+            ),
+            retentionPolicy: .none,
+            confidenceThreshold: 0.8
+        )
+
+        let harness = RecipeEvaluationHarness(
+            extractor: VersionAwareExtractor(),
+            recipeRegistry: RecipeRegistry(recipes: [recipeV1, recipeV2])
+        )
+        let samples = [
+            RecipeReplaySample(
+                id: "version-sample-1",
+                recipeID: recipeV1.id,
+                recipeVersion: 1,
+                frame: FrameContext(
+                    keyframe: Keyframe(
+                        id: "frame-version-1",
+                        sessionID: "session-version-1",
+                        ordinal: 1,
+                        capturedAt: date("2026-03-17T10:15:00+08:00"),
+                        sourcePlatform: .manual,
+                        imagePath: "/tmp/version-1.jpg"
+                    )
+                ),
+                expectedFields: ["version_marker": "v1"]
+            ),
+            RecipeReplaySample(
+                id: "version-sample-2",
+                recipeID: recipeV2.id,
+                recipeVersion: 2,
+                frame: FrameContext(
+                    keyframe: Keyframe(
+                        id: "frame-version-2",
+                        sessionID: "session-version-2",
+                        ordinal: 1,
+                        capturedAt: date("2026-03-17T10:16:00+08:00"),
+                        sourcePlatform: .manual,
+                        imagePath: "/tmp/version-2.jpg"
+                    )
+                ),
+                expectedFields: ["version_marker": "v2"]
+            )
+        ]
+
+        let reports = try harness.evaluate(samples: samples)
+        XCTAssertEqual(reports.count, 2)
+        XCTAssertEqual(reports.first(where: { $0.recipeVersion == 1 })?.fieldSummaries.first?.matchedCount, 1)
+        XCTAssertEqual(reports.first(where: { $0.recipeVersion == 2 })?.fieldSummaries.first?.matchedCount, 1)
+    }
+
     func testRecipeDatasetStorePersistsSamplesAndReports() throws {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -440,6 +633,76 @@ final class MINDPipelinesTests: XCTestCase {
         let reports = try datasetStore.evaluate(using: harness)
         XCTAssertEqual(reports.count, 1)
         XCTAssertEqual(try datasetStore.loadReports().first?.recipeID, DefaultRecipes.meituanExpenseReceipt.id)
+    }
+
+    func testManualReviewCorrectionRewritesCommittedCanonicalData() {
+        let coordinator = LiveIngestCoordinator(store: nil, extractor: HeuristicVisionExtractor(), now: {
+            self.date("2026-03-22T00:00:00+08:00")
+        })
+        let sessionID = "review-fix-wechat"
+
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date("2026-03-20T08:58:00+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+
+        _ = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date("2026-03-20T08:58:03+08:00"),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: .wechat,
+                frameID: "frame-fix-1",
+                note: """
+                message=把手册发你了
+                file=宇树G1人形机器人操作经验手册.pdf
+                path=/Users/a/Downloads/unitree-g1-manual.pdf
+                """,
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/review-fix-frame-1.jpg"
+        )
+
+        let completion = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-20T08:58:05+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat
+        ))
+
+        XCTAssertEqual(completion?.pipelinePanels.first(where: { $0.id == "attachment" })?.lines, ["暂无数据"])
+        guard let reviewID = completion?.reviewItems.first?.id else {
+            return XCTFail("Expected a low-confidence review item")
+        }
+
+        let correction = coordinator.applyReviewCorrection(
+            reviewID,
+            correctedFields: [
+                "participant_name": "陈攀",
+                "message_text": "把手册发你了",
+                "attachment_filename": "宇树G1人形机器人操作经验手册.pdf",
+                "path": "/Users/a/Downloads/unitree-g1-manual.pdf"
+            ]
+        )
+
+        XCTAssertEqual(correction?.appliedToCommittedSession, true)
+        XCTAssertTrue(correction?.commitSummaryLines.contains("attachment: 宇树G1人形机器人操作经验手册.pdf") == true)
+        XCTAssertTrue(
+            correction?.pipelinePanels
+                .first(where: { $0.id == "attachment" })?
+                .lines
+                .contains(where: { $0.contains("宇树G1人形机器人操作经验手册.pdf") && $0.contains("陈攀") }) == true
+        )
+        XCTAssertTrue(coordinator.reviewItems().isEmpty)
     }
 
     private func makeRepository() -> InMemoryMINDRepository {
@@ -692,5 +955,209 @@ final class MINDPipelinesTests: XCTestCase {
                 platformHint: preset.platform
             ))
         }
+    }
+}
+
+private final class VersionAwareExtractor: VisionExtractor {
+    func extract(frame: FrameContext, using recipe: GUIRecipe) throws -> ObservationBatch {
+        ObservationBatch(
+            sessionID: frame.keyframe.sessionID,
+            frameID: frame.keyframe.id,
+            platform: recipe.platform,
+            pageKind: recipe.pageKind,
+            recipeID: recipe.id,
+            recipeVersion: recipe.version,
+            capturedAt: frame.keyframe.capturedAt,
+            extractedFields: ["version_marker": "v\(recipe.version)"],
+            confidence: 0.99
+        )
+    }
+}
+
+private final class SmokeIngestRelay {
+    var onCompletion: ((LiveSessionCompletion) -> Void)?
+
+    private let queue = DispatchQueue(label: "mind.tests.smoke.relay")
+    private let coordinator: LiveIngestCoordinator
+    private let frameRoot: URL
+
+    private var listener: NWListener?
+    private var inboundConnections: [ObjectIdentifier: SmokeInboundConnection] = [:]
+    private var receivedMessages: [StreamMessage] = []
+    private var persistedFrames: [String] = []
+
+    init(frameRoot: URL, now: @escaping () -> Date) {
+        self.frameRoot = frameRoot
+        self.coordinator = LiveIngestCoordinator(
+            store: nil,
+            extractor: HeuristicVisionExtractor(),
+            now: now
+        )
+    }
+
+    func start(onReady: @escaping (NWEndpoint) -> Void) throws {
+        let listener = try NWListener(using: .tcp, on: .any)
+        self.listener = listener
+        listener.stateUpdateHandler = { [weak listener] state in
+            guard case .ready = state, let port = listener?.port else { return }
+            onReady(.hostPort(host: "127.0.0.1", port: port))
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.accept(connection: connection)
+        }
+        listener.start(queue: queue)
+    }
+
+    func stop() {
+        queue.sync {
+            self.listener?.cancel()
+            self.listener = nil
+            self.inboundConnections.values.forEach { $0.cancel() }
+            self.inboundConnections.removeAll()
+        }
+    }
+
+    func receivedMessageKinds() -> [StreamMessageKind] {
+        queue.sync { receivedMessages.map(\.kind) }
+    }
+
+    func persistedFramePaths() -> [String] {
+        queue.sync { persistedFrames }
+    }
+
+    private func accept(connection: NWConnection) {
+        let inbound = SmokeInboundConnection(connection: connection)
+        inbound.onMessage = { [weak self] message in
+            self?.handle(message)
+        }
+        let identifier = ObjectIdentifier(inbound)
+        inbound.onCompletion = { [weak self] in
+            self?.inboundConnections.removeValue(forKey: identifier)
+        }
+        inboundConnections[identifier] = inbound
+        inbound.start(queue: queue)
+    }
+
+    private func handle(_ message: StreamMessage) {
+        receivedMessages.append(message)
+
+        switch message.kind {
+        case .hello, .ack, .resumeSession, .heartbeat:
+            break
+        case .startSession:
+            _ = coordinator.startSession(from: message)
+        case .keyframe:
+            let imagePath = persistImageIfPresent(for: message)
+            _ = coordinator.ingestKeyframe(from: message, imagePath: imagePath?.path)
+        case .stopSession:
+            if let completion = coordinator.stopSession(from: message) {
+                onCompletion?(completion)
+            }
+        }
+    }
+
+    private func persistImageIfPresent(for message: StreamMessage) -> URL? {
+        guard let sessionID = message.sessionID,
+              let frameID = message.frameID,
+              let imageBase64 = message.imageBase64,
+              let data = Data(base64Encoded: imageBase64) else {
+            return nil
+        }
+
+        let sessionDirectory = frameRoot.appendingPathComponent(sessionID, isDirectory: true)
+        try? FileManager.default.createDirectory(at: sessionDirectory, withIntermediateDirectories: true)
+        let destination = sessionDirectory.appendingPathComponent(frameID + ".jpg")
+        do {
+            try data.write(to: destination, options: .atomic)
+            persistedFrames.append(destination.path)
+            return destination
+        } catch {
+            return nil
+        }
+    }
+}
+
+private final class SmokeInboundConnection {
+    var onMessage: ((StreamMessage) -> Void)?
+    var onCompletion: (() -> Void)?
+
+    private let connection: NWConnection
+    private var buffer = Data()
+
+    init(connection: NWConnection) {
+        self.connection = connection
+    }
+
+    func start(queue: DispatchQueue) {
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                self?.receive()
+            case .failed, .cancelled:
+                self?.onCompletion?()
+            default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+    }
+
+    func cancel() {
+        connection.cancel()
+    }
+
+    private func receive() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 262_144) { [weak self] data, _, isComplete, error in
+            guard let self = self else { return }
+
+            if let data = data, data.isEmpty == false {
+                self.buffer.append(data)
+                self.processBuffer()
+            }
+
+            if isComplete || error != nil {
+                self.onCompletion?()
+                return
+            }
+
+            self.receive()
+        }
+    }
+
+    private func processBuffer() {
+        let newline = Data([0x0A])
+        while let range = buffer.range(of: newline) {
+            let line = buffer.subdata(in: 0..<range.lowerBound)
+            buffer.removeSubrange(0..<range.upperBound)
+            guard line.isEmpty == false,
+                  let message = try? StreamMessageCodec.decodeLine(line) else {
+                continue
+            }
+            sendAck(for: message)
+            onMessage?(message)
+        }
+    }
+
+    private func sendAck(for message: StreamMessage) {
+        guard message.kind != .ack, let messageID = message.messageID else {
+            return
+        }
+
+        let ack = StreamMessage(
+            kind: .ack,
+            messageID: UUID().uuidString,
+            sessionID: message.sessionID,
+            deviceID: "mac-smoke",
+            deviceName: "Smoke Relay",
+            platformHint: message.platformHint,
+            ackMessageID: messageID,
+            ackSequence: message.chunkSequence,
+            note: "ack"
+        )
+
+        guard let data = try? StreamMessageCodec.encodeLine(ack) else {
+            return
+        }
+        connection.send(content: data, completion: .contentProcessed { _ in })
     }
 }

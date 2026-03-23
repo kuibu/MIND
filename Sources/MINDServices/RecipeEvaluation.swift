@@ -149,7 +149,8 @@ public final class RecipeEvaluationHarness {
     public func evaluate(samples: [RecipeReplaySample]) throws -> [RecipeEvaluationReport] {
         let grouped = Dictionary(grouping: samples, by: { "\($0.recipeID)#\($0.recipeVersion)" })
         return try grouped.values.map { samples in
-            guard let first = samples.first, let recipe = recipeRegistry.recipe(id: first.recipeID) else {
+            guard let first = samples.first,
+                  let recipe = recipeRegistry.recipe(id: first.recipeID, version: first.recipeVersion) else {
                 throw NSError(domain: "RecipeEvaluationHarness", code: 1, userInfo: [NSLocalizedDescriptionKey: "Recipe not found for evaluation sample"])
             }
 

@@ -70,10 +70,12 @@ public final class ReliableStreamClient {
     private var pendingByID: [String: PendingEnvelope] = [:]
     private var connectionReady = false
     private var reconnectWorkItem: DispatchWorkItem?
+    private var drainTimeoutWorkItem: DispatchWorkItem?
     private var resendTimer: DispatchSourceTimer?
     private var heartbeatTimer: DispatchSourceTimer?
     private var resumeContext: ResumeContext?
     private var highestAckSequenceBySession: [String: Int] = [:]
+    private var disconnectWhenPendingClears = false
 
     public init(
         queue: DispatchQueue = DispatchQueue(label: "mind.reliable.stream.client"),
@@ -144,19 +146,32 @@ public final class ReliableStreamClient {
 
     public func disconnect(after gracePeriod: TimeInterval = 0) {
         queue.async {
-            let cancelConnection = { [weak self] in
-                self?.teardownConnection()
-                self?.endpointTarget = nil
-                self?.resumeContext = nil
-                self?.pendingOrder.removeAll()
-                self?.pendingByID.removeAll()
-                self?.publishPendingCount()
+            let cancelConnection: () -> Void = { [weak self] in
+                self?.finalizeDisconnect()
             }
 
             if gracePeriod > 0 {
                 self.queue.asyncAfter(deadline: .now() + gracePeriod, execute: cancelConnection)
             } else {
                 cancelConnection()
+            }
+        }
+    }
+
+    public func disconnectWhenDrained(timeout: TimeInterval = 5) {
+        queue.async {
+            self.disconnectWhenPendingClears = true
+            self.resumeContext = nil
+            self.restartHeartbeatTimerIfNeeded()
+
+            if self.pendingByID.isEmpty {
+                self.finalizeDisconnect()
+                return
+            }
+
+            self.scheduleDrainTimeout(timeout: timeout)
+            if self.connectionReady == false {
+                self.scheduleReconnect()
             }
         }
     }
@@ -261,6 +276,7 @@ public final class ReliableStreamClient {
                 pendingOrder.removeAll { $0 == ackMessageID }
                 pendingByID.removeValue(forKey: ackMessageID)
                 publishPendingCount()
+                finishDrainIfPossible()
             }
             if let sessionID = message.sessionID, let ackSequence = message.ackSequence {
                 highestAckSequenceBySession[sessionID] = max(highestAckSequenceBySession[sessionID] ?? 0, ackSequence)
@@ -413,5 +429,33 @@ public final class ReliableStreamClient {
         DispatchQueue.main.async {
             self.onPendingCountChange?(count)
         }
+    }
+
+    private func scheduleDrainTimeout(timeout: TimeInterval) {
+        drainTimeoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.finalizeDisconnect()
+        }
+        drainTimeoutWorkItem = workItem
+        queue.asyncAfter(deadline: .now() + timeout, execute: workItem)
+    }
+
+    private func finishDrainIfPossible() {
+        guard disconnectWhenPendingClears, pendingByID.isEmpty else {
+            return
+        }
+        finalizeDisconnect()
+    }
+
+    private func finalizeDisconnect() {
+        drainTimeoutWorkItem?.cancel()
+        drainTimeoutWorkItem = nil
+        disconnectWhenPendingClears = false
+        teardownConnection()
+        endpointTarget = nil
+        resumeContext = nil
+        pendingOrder.removeAll()
+        pendingByID.removeAll()
+        publishPendingCount()
     }
 }

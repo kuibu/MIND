@@ -68,10 +68,34 @@ final class MacIngestRuntimeCoordinator: ObservableObject {
             return
         }
 
+        let correction = ingestCoordinator.applyReviewCorrection(reviewID, correctedFields: correctedFields)
+        guard let correction = correction else {
+            viewModel.prependObservationPreview(
+                ObservationPreview(
+                    id: UUID().uuidString,
+                    badge: "Review",
+                    title: "纠错未写回",
+                    subtitle: "review id=\(reviewID)"
+                )
+            )
+            return
+        }
+
+        viewModel.replaceReviewQueue(ingestCoordinator.reviewItems())
+        viewModel.replacePipelinePanels(correction.pipelinePanels)
+        correction.commitSummaryLines.reversed().forEach { line in
+            viewModel.prependObservationPreview(
+                ObservationPreview(
+                    id: UUID().uuidString,
+                    badge: correction.appliedToCommittedSession ? "Correction" : "Review",
+                    title: line,
+                    subtitle: correction.appliedToCommittedSession ? "已写回 canonical store" : "等待 session commit"
+                )
+            )
+        }
+
         do {
             try recipeDatasetStore.save(sample: replaySample)
-            ingestCoordinator.resolveReviewItem(reviewID)
-            viewModel.replaceReviewQueue(ingestCoordinator.reviewItems())
             refreshEvaluationReports()
             viewModel.prependObservationPreview(
                 ObservationPreview(
@@ -86,8 +110,8 @@ final class MacIngestRuntimeCoordinator: ObservableObject {
                 ObservationPreview(
                     id: UUID().uuidString,
                     badge: "Review",
-                    title: "标注保存失败",
-                    subtitle: error.localizedDescription
+                    title: "标注样本保存失败",
+                    subtitle: "canonical 已更新，样本落盘失败: \(error.localizedDescription)"
                 )
             )
         }

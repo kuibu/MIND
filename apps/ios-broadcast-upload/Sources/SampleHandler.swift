@@ -78,7 +78,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
             )
         )
         relayClient.updateResumeContext(nil)
-        relayClient.disconnect(after: 0.8)
+        relayClient.disconnectWhenDrained(timeout: 5)
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
