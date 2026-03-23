@@ -143,6 +143,7 @@ public enum EvidenceRetentionPolicy: String, Codable {
 
 public struct GUIRecipe: Codable, Equatable {
     public let id: String
+    public let version: Int
     public let platform: SourcePlatform
     public let pageKind: String
     public let description: String
@@ -153,6 +154,7 @@ public struct GUIRecipe: Codable, Equatable {
 
     public init(
         id: String,
+        version: Int = 1,
         platform: SourcePlatform,
         pageKind: String,
         description: String,
@@ -162,6 +164,7 @@ public struct GUIRecipe: Codable, Equatable {
         confidenceThreshold: Double
     ) {
         self.id = id
+        self.version = version
         self.platform = platform
         self.pageKind = pageKind
         self.description = description
@@ -178,7 +181,9 @@ public struct ObservationBatch: Codable, Equatable {
     public let platform: SourcePlatform
     public let pageKind: String
     public let recipeID: String
+    public let recipeVersion: Int
     public let capturedAt: Date
+    public let extractedFields: [String: String]
     public let texts: [UITextObservation]
     public let objects: [UIObjectObservation]
     public let events: [UIEventObservation]
@@ -191,7 +196,9 @@ public struct ObservationBatch: Codable, Equatable {
         platform: SourcePlatform,
         pageKind: String,
         recipeID: String,
+        recipeVersion: Int = 1,
         capturedAt: Date,
+        extractedFields: [String: String] = [:],
         texts: [UITextObservation] = [],
         objects: [UIObjectObservation] = [],
         events: [UIEventObservation] = [],
@@ -203,7 +210,9 @@ public struct ObservationBatch: Codable, Equatable {
         self.platform = platform
         self.pageKind = pageKind
         self.recipeID = recipeID
+        self.recipeVersion = recipeVersion
         self.capturedAt = capturedAt
+        self.extractedFields = extractedFields
         self.texts = texts
         self.objects = objects
         self.events = events

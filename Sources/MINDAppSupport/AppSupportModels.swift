@@ -122,6 +122,36 @@ public struct ObservationPreview: Identifiable, Equatable {
     }
 }
 
+public struct ReviewQueueCard: Identifiable, Equatable {
+    public let id: String
+    public let title: String
+    public let subtitle: String
+    public let predictedFields: [String]
+    public let evidenceLocators: [String]
+
+    public init(id: String, title: String, subtitle: String, predictedFields: [String], evidenceLocators: [String]) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.predictedFields = predictedFields
+        self.evidenceLocators = evidenceLocators
+    }
+}
+
+public struct EvaluationReportCard: Identifiable, Equatable {
+    public let id: String
+    public let title: String
+    public let subtitle: String
+    public let lines: [String]
+
+    public init(id: String, title: String, subtitle: String, lines: [String]) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.lines = lines
+    }
+}
+
 public struct PipelinePanelItem: Identifiable, Equatable {
     public let id: String
     public let title: String
@@ -460,6 +490,8 @@ public final class MacIngestViewModel: ObservableObject {
     @Published public private(set) var runtimeDescriptor = MiniCPMRuntimeDescriptor()
     @Published public private(set) var sessions: [IngestSessionCard] = []
     @Published public private(set) var observationPreviews: [ObservationPreview] = []
+    @Published public private(set) var reviewQueue: [ReviewQueueCard] = []
+    @Published public private(set) var evaluationReports: [EvaluationReportCard] = []
     @Published public private(set) var pipelinePanels: [PipelinePanelItem] = []
     @Published public private(set) var recipeLabels: [String] = []
 
@@ -510,9 +542,42 @@ public final class MacIngestViewModel: ObservableObject {
         pipelinePanels = panels
     }
 
+    public func replaceReviewQueue(_ items: [LowConfidenceReviewItem]) {
+        reviewQueue = items.map { item in
+            let fieldLines = item.predictedFields.keys.sorted().map { key in
+                "\(key)=\(item.predictedFields[key] ?? "")"
+            }
+            let missing = item.missingRequiredFields.isEmpty ? "字段完整" : "缺少: " + item.missingRequiredFields.joined(separator: ", ")
+            return ReviewQueueCard(
+                id: item.id,
+                title: "\(item.recipeID) · \(Int(item.confidence * 100))%",
+                subtitle: "\(item.sessionID.rawValue) / \(item.frameID.rawValue) · \(missing)",
+                predictedFields: fieldLines,
+                evidenceLocators: item.evidenceLocators
+            )
+        }
+    }
+
+    public func replaceEvaluationReports(_ reports: [RecipeEvaluationReport]) {
+        evaluationReports = reports.map { report in
+            let lines = report.fieldSummaries.map { summary -> String in
+                let accuracy = Int((summary.accuracy * 100).rounded())
+                return "\(summary.fieldName): \(accuracy)% (\(summary.matchedCount)/\(summary.totalCount))"
+            }
+            return EvaluationReportCard(
+                id: report.recipeID,
+                title: report.recipeID,
+                subtitle: "v\(report.recipeVersion) · \(report.sampleCount) 个标注样本",
+                lines: lines.isEmpty ? ["暂无字段准确率"] : lines
+            )
+        }
+    }
+
     public func resetLiveState(recipeLabels: [String], pipelinePanels: [PipelinePanelItem]) {
         sessions = []
         observationPreviews = []
+        reviewQueue = []
+        evaluationReports = []
         self.pipelinePanels = pipelinePanels
         self.recipeLabels = recipeLabels
     }

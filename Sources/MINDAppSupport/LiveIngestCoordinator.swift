@@ -8,10 +8,12 @@ import MINDServices
 public struct LiveFrameIngestUpdate {
     public let session: IngestSessionCard
     public let observationPreviews: [ObservationPreview]
+    public let reviewItems: [LowConfidenceReviewItem]
 
-    public init(session: IngestSessionCard, observationPreviews: [ObservationPreview]) {
+    public init(session: IngestSessionCard, observationPreviews: [ObservationPreview], reviewItems: [LowConfidenceReviewItem]) {
         self.session = session
         self.observationPreviews = observationPreviews
+        self.reviewItems = reviewItems
     }
 }
 
@@ -19,11 +21,21 @@ public struct LiveSessionCompletion {
     public let session: IngestSessionCard
     public let pipelinePanels: [PipelinePanelItem]
     public let commitSummaryLines: [String]
+    public let reviewItems: [LowConfidenceReviewItem]
+    public let retainedEvidencePaths: [String]
 
-    public init(session: IngestSessionCard, pipelinePanels: [PipelinePanelItem], commitSummaryLines: [String]) {
+    public init(
+        session: IngestSessionCard,
+        pipelinePanels: [PipelinePanelItem],
+        commitSummaryLines: [String],
+        reviewItems: [LowConfidenceReviewItem],
+        retainedEvidencePaths: [String]
+    ) {
         self.session = session
         self.pipelinePanels = pipelinePanels
         self.commitSummaryLines = commitSummaryLines
+        self.reviewItems = reviewItems
+        self.retainedEvidencePaths = retainedEvidencePaths
     }
 }
 
@@ -37,7 +49,12 @@ public final class LiveIngestCoordinator {
         baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
 #endif
-        return baseDirectory.appendingPathComponent("MIND/runtime/canonical-store.json", isDirectory: false)
+        return baseDirectory.appendingPathComponent("MIND/runtime/canonical-store.sqlite", isDirectory: false)
+    }()
+
+    public static let legacySnapshotURL: URL = {
+        defaultStoreURL.deletingLastPathComponent()
+            .appendingPathComponent("canonical-store.json", isDirectory: false)
     }()
 
     private struct SessionState {
@@ -51,7 +68,7 @@ public final class LiveIngestCoordinator {
     }
 
     private let repository: InMemoryMINDRepository
-    private let store: DiskCanonicalStore?
+    private let store: CanonicalStore?
     private let recipeRegistry: RecipeRegistry
     private let extractor: VisionExtractor
     private let merger: SessionMerger
@@ -59,10 +76,15 @@ public final class LiveIngestCoordinator {
     private let now: () -> Date
 
     private var sessionStates: [CaptureSessionID: SessionState] = [:]
+    private var reviewQueue: [LowConfidenceReviewItem] = []
+    private var reviewFrames: [String: FrameContext] = [:]
 
     public init(
         repository: InMemoryMINDRepository? = nil,
-        store: DiskCanonicalStore? = DiskCanonicalStore(fileURL: LiveIngestCoordinator.defaultStoreURL),
+        store: CanonicalStore? = SQLiteCanonicalStore(
+            fileURL: LiveIngestCoordinator.defaultStoreURL,
+            legacySnapshotURL: LiveIngestCoordinator.legacySnapshotURL
+        ),
         recipeRegistry: RecipeRegistry = RecipeRegistry(),
         extractor: VisionExtractor = VisionExtractorFactory.defaultExtractor(),
         merger: SessionMerger = SessionMerger(),
@@ -110,6 +132,38 @@ public final class LiveIngestCoordinator {
                 lines: ["暂无数据"]
             )
         ]
+    }
+
+    public func reviewItems() -> [LowConfidenceReviewItem] {
+        reviewQueue
+    }
+
+    public func replaySample(forReviewID reviewID: String, expectedFields: [String: String]) -> RecipeReplaySample? {
+        guard let reviewItem = reviewQueue.first(where: { $0.id == reviewID }),
+              let frame = reviewFrames[reviewID] else {
+            return nil
+        }
+
+        return RecipeReplaySample(
+            id: stableID(
+                prefix: "sample",
+                components: [
+                    reviewItem.recipeID,
+                    String(reviewItem.recipeVersion),
+                    reviewItem.sessionID.rawValue,
+                    reviewItem.frameID.rawValue
+                ]
+            ),
+            recipeID: reviewItem.recipeID,
+            recipeVersion: reviewItem.recipeVersion,
+            frame: frame,
+            expectedFields: expectedFields
+        )
+    }
+
+    public func resolveReviewItem(_ reviewID: String) {
+        reviewQueue.removeAll { $0.id == reviewID }
+        reviewFrames.removeValue(forKey: reviewID)
     }
 
     public func startSession(from message: StreamMessage) -> IngestSessionCard? {
@@ -191,6 +245,14 @@ public final class LiveIngestCoordinator {
         }
         sessionStates[sessionID] = state
 
+        let newReviewItems = reviewItem(for: batch, recipe: state.recipe, state: state).map { item -> [LowConfidenceReviewItem] in
+            if reviewQueue.contains(where: { $0.id == item.id }) == false {
+                reviewQueue.insert(item, at: 0)
+                reviewFrames[item.id] = frameContext
+            }
+            return [item]
+        } ?? []
+
         let mergedCount = mergedObservationCount(for: batch)
         let sessionCard = makeSessionCard(
             sessionID: sessionID,
@@ -202,7 +264,8 @@ public final class LiveIngestCoordinator {
 
         return LiveFrameIngestUpdate(
             session: sessionCard,
-            observationPreviews: previews(for: batch)
+            observationPreviews: previews(for: batch),
+            reviewItems: newReviewItems
         )
     }
 
@@ -222,7 +285,13 @@ public final class LiveIngestCoordinator {
                 keyframeCount: state.keyframeCount,
                 mergedObservationCount: 0
             )
-            return LiveSessionCompletion(session: session, pipelinePanels: initialPipelinePanels(), commitSummaryLines: ["未抽取到结构化数据"])
+            return LiveSessionCompletion(
+                session: session,
+                pipelinePanels: initialPipelinePanels(),
+                commitSummaryLines: ["未抽取到结构化数据"],
+                reviewItems: reviewQueue,
+                retainedEvidencePaths: retainedEvidencePaths(for: state)
+            )
         }
 
         let commitSummaryLines = commit(merged: merged, state: state)
@@ -237,7 +306,9 @@ public final class LiveIngestCoordinator {
         return LiveSessionCompletion(
             session: session,
             pipelinePanels: buildPipelinePanels(),
-            commitSummaryLines: commitSummaryLines
+            commitSummaryLines: commitSummaryLines,
+            reviewItems: reviewQueue,
+            retainedEvidencePaths: retainedEvidencePaths(for: state)
         )
     }
 
@@ -552,14 +623,73 @@ public final class LiveIngestCoordinator {
 
     private func evidenceRefs(for merged: MergedSessionObservations, state: SessionState) -> [EvidenceRef] {
         merged.evidenceFrameIDs.map { frameID in
-            let locator = state.savedPathsByFrameID[frameID] ?? "frame://\(merged.sessionID.rawValue)/\(frameID.rawValue)"
+            let retained = shouldRetainEvidence(frameID: frameID, recipe: state.recipe, state: state)
+            let locator = retained
+                ? (state.savedPathsByFrameID[frameID] ?? "frame://\(merged.sessionID.rawValue)/\(frameID.rawValue)")
+                : "frame://\(merged.sessionID.rawValue)/\(frameID.rawValue)"
             return EvidenceRef(
                 id: stableID(prefix: "ev", components: [merged.sessionID.rawValue, frameID.rawValue]),
                 locator: locator,
                 source: merged.platform,
                 confidence: 0.9,
-                retained: true
+                retained: retained
             )
+        }
+    }
+
+    private func reviewItem(
+        for batch: ObservationBatch,
+        recipe: GUIRecipe,
+        state: SessionState
+    ) -> LowConfidenceReviewItem? {
+        let missingRequiredFields = recipe.extractionSchema.fields
+            .filter { $0.required }
+            .map(\.name)
+            .filter { fieldName in
+                guard let value = batch.extractedFields[fieldName] else { return true }
+                return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+
+        let shouldReview = batch.confidence < recipe.confidenceThreshold || missingRequiredFields.isEmpty == false
+        guard shouldReview else { return nil }
+
+        let evidenceLocator = state.savedPathsByFrameID[batch.frameID] ?? "frame://\(batch.sessionID.rawValue)/\(batch.frameID.rawValue)"
+        return LowConfidenceReviewItem(
+            id: stableID(prefix: "review", components: [batch.sessionID.rawValue, batch.frameID.rawValue, recipe.id]),
+            sessionID: batch.sessionID,
+            frameID: batch.frameID,
+            recipeID: recipe.id,
+            recipeVersion: recipe.version,
+            confidence: batch.confidence,
+            predictedFields: batch.extractedFields,
+            missingRequiredFields: missingRequiredFields,
+            evidenceLocators: [evidenceLocator]
+        )
+    }
+
+    private func shouldRetainEvidence(frameID: FrameID, recipe: GUIRecipe, state: SessionState) -> Bool {
+        switch recipe.retentionPolicy {
+        case .always:
+            return true
+        case .none:
+            return false
+        case .lowConfidenceOnly:
+            guard let batch = state.batches.first(where: { $0.frameID == frameID }) else {
+                return false
+            }
+            let missingRequired = recipe.extractionSchema.fields
+                .filter { $0.required }
+                .contains { field in
+                    let value = batch.extractedFields[field.name]
+                    return value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+                }
+            return batch.confidence < recipe.confidenceThreshold || missingRequired
+        }
+    }
+
+    private func retainedEvidencePaths(for state: SessionState) -> [String] {
+        state.savedPathsByFrameID.compactMap { frameID, path in
+            shouldRetainEvidence(frameID: frameID, recipe: state.recipe, state: state) ? path : nil
         }
     }
 

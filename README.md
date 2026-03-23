@@ -364,19 +364,27 @@ MIND 不只是一个数据层。
 - `MINDProtocol`: session、keyframe、observation、GUI recipe 协议
 - `MINDSchemas`: canonical resources 与权限/证据模型
 - `MINDRecipes`: 微信 / 支付宝 / 美团 / 滴滴 / 抖音 / 快手 / 小红书 / 视频号的默认 recipe 注册表
-- `MINDServices`: Ollama MiniCPM extractor、本地 Python MiniCPM bridge、heuristic fallback extractor、session merger、in-memory repository、JSON snapshot canonical store、expense normalizer
+- `MINDServices`: Ollama MiniCPM extractor、本地 Python MiniCPM bridge、heuristic fallback extractor、session merger、in-memory repository、SQLite canonical store、append-only event log、replay dataset/evaluation store、expense normalizer
 - `MINDPipelines`: 三条任务导向 pipeline
-- `MINDAppSupport`: iOS/macOS app 共用 view model、capture preset、live ingest coordinator
+- `MINDAppSupport`: iOS/macOS app 共用 view model、capture preset、可靠推流客户端、live ingest coordinator
 
 当前 app 原型已经打通的链路：
 
 - `iOS` 端用 SwiftUI 提供局域网发现、配对、采集预设选择、开始/结束推流
 - `iOS` 端包含 `Broadcast Upload Extension`，可以把系统级录屏关键帧经共享 app-group 设置实时发往 Mac
-- `iOS` 端在 simulator 下会按预设生成结构化 demo frame hint，并通过 `NWConnection` 发往 Mac
-- `macOS` 端通过 Bonjour + `NWListener` 接收 keyframe，落盘到本地热数据区
+- `iOS` 端推流已经补上 `ACK / 重传 / 断线重连 / resume session / heartbeat / 极小热缓冲裁剪`
+- `iOS` 端在 simulator 下会按预设生成结构化 demo frame hint，并通过可靠 `NWConnection` 发往 Mac
+- `macOS` 端通过 Bonjour + `NWListener` 接收 keyframe，做 message 去重、即时 ACK、热数据区清理和过期 session 回收
 - `macOS` 端把 keyframe 送入 `LiveIngestCoordinator`，默认按 `Ollama MiniCPM -> Python MiniCPM bridge -> heuristic` 顺序做关键帧抽取
-- `macOS` 端会把 canonical resources 持久化到本地 `Application Support/MIND/runtime/canonical-store.json`
+- `macOS` 端会把 canonical resources 持久化到本地 `Application Support/MIND/runtime/canonical-store.sqlite`
+- `macOS` 端已经有低置信度 evidence retention、人工纠错台、标注样本保存、replay dataset 和字段级准确率面板
 - canonical commit 之后会立即刷新 3 个任务面板：消费汇总、微信附件检索、收藏时间线
+
+当前本地评估与数据集路径：
+
+- canonical store: `~/Library/Application Support/MIND/runtime/canonical-store.sqlite`
+- keyframe hot cache: `~/Library/Application Support/MIND/runtime/frames/keyframes`
+- recipe replay dataset: `~/Library/Application Support/MIND/runtime/recipe-replays`
 
 MiniCPM 本地运行前提：
 

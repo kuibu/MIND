@@ -18,7 +18,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
     let viewModel = IOSCaptureViewModel()
 
     private let browser = BonjourBrowserService()
-    private let client = CaptureStreamClient()
+    private let client = ReliableStreamClient()
     private let sharedSettingsStore = CaptureSharedSettingsStore()
     private lazy var captureSource = ReplayKitCaptureSource(
         onFrame: { [weak self] payload in
@@ -49,6 +49,12 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         client.onStateChange = { [weak self] description in
             Task { @MainActor in
                 self?.viewModel.logEvent(title: "连接状态", detail: description)
+            }
+        }
+
+        client.onPendingCountChange = { [weak self] count in
+            Task { @MainActor in
+                self?.viewModel.updateBufferedChunkCount(count)
             }
         }
     }
@@ -94,6 +100,8 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         let sessionID = CaptureSessionID(rawValue: "iphone-\(Int(Date().timeIntervalSince1970))")
         currentSessionID = sessionID
         sentFrameCount = 0
+        let deviceID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+        let deviceName = UIDevice.current.name
 
         viewModel.beginExternalSession(
             sessionID: sessionID,
@@ -101,12 +109,22 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
             modeLabel: "\(preset.title) · \(viewModel.keepAliveModeEnabled ? "可恢复长会话" : "快捷采集")"
         )
 
+        client.updateResumeContext(
+            ReliableStreamClient.ResumeContext(
+                sessionID: sessionID.rawValue,
+                deviceID: deviceID,
+                deviceName: deviceName,
+                platformHint: preset.platform,
+                note: viewModel.keepAliveModeEnabled ? "durable_session" : "quick_session"
+            )
+        )
+
         client.send(
             StreamMessage(
                 kind: .startSession,
                 sessionID: sessionID.rawValue,
-                deviceID: UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString,
-                deviceName: UIDevice.current.name,
+                deviceID: deviceID,
+                deviceName: deviceName,
                 platformHint: preset.platform,
                 note: preset.sessionNote + "\nmode=" + (viewModel.keepAliveModeEnabled ? "durable" : "quick")
             )
@@ -133,6 +151,7 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
             )
         }
 
+        client.updateResumeContext(nil)
         currentSessionID = nil
         sentFrameCount = 0
         viewModel.endExternalSession()
@@ -162,7 +181,6 @@ final class IOSCaptureRuntimeCoordinator: ObservableObject {
         )
 
         client.send(message)
-        viewModel.updateBufferedChunkCount(min(6, sentFrameCount))
     }
 
     private func persistSharedSettings(relayNode: DiscoveredMacNode?) {
@@ -222,47 +240,6 @@ private final class BonjourBrowserService {
         }
 
         browser.start(queue: queue)
-    }
-}
-
-private final class CaptureStreamClient {
-    var onStateChange: ((String) -> Void)?
-
-    private let queue = DispatchQueue(label: "mind.ios.connection")
-    private var connection: NWConnection?
-
-    func connect(to endpoint: NWEndpoint) {
-        connection?.cancel()
-
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        self.connection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .setup:
-                self?.onStateChange?("准备连接")
-            case .waiting(let error):
-                self?.onStateChange?("等待中: \(error.localizedDescription)")
-            case .ready:
-                self?.onStateChange?("已连接")
-            case .failed(let error):
-                self?.onStateChange?("连接失败: \(error.localizedDescription)")
-            case .cancelled:
-                self?.onStateChange?("连接已取消")
-            default:
-                self?.onStateChange?("连接状态更新")
-            }
-        }
-        connection.start(queue: queue)
-    }
-
-    func send(_ message: StreamMessage) {
-        guard let connection = connection else { return }
-        do {
-            let data = try StreamMessageCodec.encodeLine(message)
-            connection.send(content: data, completion: .contentProcessed { _ in })
-        } catch {
-            onStateChange?("消息编码失败: \(error.localizedDescription)")
-        }
     }
 }
 

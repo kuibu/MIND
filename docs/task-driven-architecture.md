@@ -50,15 +50,16 @@
 - `iPhone Broadcast Upload Extension -> App Group 共享配置 -> 系统级录屏关键帧推流`
 - `Mac SwiftUI App -> NWListener 接收 -> keyframe 落盘`
 - `LiveIngestCoordinator -> recipe 选择 -> MiniCPM-o 4.5 bridge extraction -> session merge`
-- `canonical commit -> JSON snapshot persistent store -> 3 条任务面板刷新`
+- `canonical commit -> SQLite canonical store + append-only event log -> 3 条任务面板刷新`
 
-这还不是最终架构，因为：
+当前原型继续往前推进后，已经补上了第一轮基础设施：
 
 - `MiniCPM-o 4.5` 目前已经支持 `Ollama` 本机调用和本地 Python bridge 两条路径，OCR / ASR 还没有拆成独立服务
-- Broadcast Upload Extension 已经落下第一版，但传输层还没有 ack / 重传 / 断点恢复
-- canonical store 已经持久化为本地 JSON snapshot，但还不是多表数据库或事件日志存储
+- Broadcast Upload Extension 和 iPhone 主 App 已经共用可靠推流客户端，具备 `ack / 重传 / resume / heartbeat / 断线重连 / 极小热缓冲裁剪`
+- canonical store 已经迁移到本地 SQLite，多表 materialized views 与 append-only event log 已经落地
+- 低置信度样本现在会保留证据帧，进入人工纠错台，并生成本地 replay dataset 与字段级准确率报告
 
-但它已经足以验证：目录分层、协议边界和任务导向 pipeline 的方向是对的。
+但它仍然不是最终架构，因为 OCR / ASR 还没有独立服务化，权限模型也还没有延展到多主体授权和动作审批。即便如此，它已经足以验证：目录分层、协议边界和任务导向 pipeline 的方向是对的。
 
 ## 1. 三个任务到底在逼系统具备什么能力
 

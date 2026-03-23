@@ -18,6 +18,7 @@ private struct MacIngestRootView: View {
     @ObservedObject var viewModel: MacIngestViewModel
     @ObservedObject var runtime: MacIngestRuntimeCoordinator
     @State private var selectedPanelID: String?
+    @State private var reviewDrafts: [String: String] = [:]
 
     var body: some View {
         NavigationView {
@@ -27,9 +28,13 @@ private struct MacIngestRootView: View {
         .onAppear {
             runtime.onAppear()
             selectedPanelID = viewModel.pipelinePanels.first?.id
+            seedReviewDrafts(from: viewModel.reviewQueue)
         }
         .onDisappear {
             runtime.onDisappear()
+        }
+        .onChange(of: viewModel.reviewQueue) { items in
+            seedReviewDrafts(from: items)
         }
     }
 
@@ -70,6 +75,8 @@ private struct MacIngestRootView: View {
                     runtimeHero
                     sessionGrid
                     observationGrid
+                    reviewWorkbench
+                    evaluationGrid
                     if let selected = viewModel.pipelinePanels.first(where: { $0.id == selectedPanelID }) ?? viewModel.pipelinePanels.first {
                         pipelinePanel(selected)
                     }
@@ -163,6 +170,48 @@ private struct MacIngestRootView: View {
         }
     }
 
+    private var reviewWorkbench: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("人工纠错台")
+                .font(.headline)
+                .foregroundColor(.white)
+
+            if viewModel.reviewQueue.isEmpty {
+                Text("当前没有低置信度样本。低置信度关键帧会自动保留证据，并进入人工纠错台。")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.76))
+                    .panelStyle()
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14)], spacing: 14) {
+                    ForEach(viewModel.reviewQueue) { item in
+                        reviewCard(item)
+                    }
+                }
+            }
+        }
+    }
+
+    private var evaluationGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recipe Eval")
+                .font(.headline)
+                .foregroundColor(.white)
+
+            if viewModel.evaluationReports.isEmpty {
+                Text("还没有标注样本。保存人工纠错后，会在本地数据集上回放并生成字段级准确率。")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.76))
+                    .panelStyle()
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
+                    ForEach(viewModel.evaluationReports) { report in
+                        evaluationCard(report)
+                    }
+                }
+            }
+        }
+    }
+
     private func pipelinePanel(_ panel: PipelinePanelItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(panel.title)
@@ -205,6 +254,75 @@ private struct MacIngestRootView: View {
         default:
             return "circle.grid.2x2"
         }
+    }
+
+    private func reviewCard(_ item: ReviewQueueCard) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(item.title)
+                .font(.headline)
+            Text(item.subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            if item.evidenceLocators.isEmpty == false {
+                Text(item.evidenceLocators.joined(separator: "\n"))
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            TextEditor(text: reviewDraftBinding(for: item))
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 130)
+                .padding(8)
+                .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack {
+                Button("保存标注") {
+                    runtime.submitReview(reviewID: item.id, fieldText: reviewDrafts[item.id] ?? item.predictedFields.joined(separator: "\n"))
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("还原预测") {
+                    reviewDrafts[item.id] = item.predictedFields.joined(separator: "\n")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .panelStyle(background: Color.white.opacity(0.9), foreground: .black)
+    }
+
+    private func evaluationCard(_ report: EvaluationReportCard) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(report.title)
+                .font(.headline)
+            Text(report.subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            ForEach(report.lines, id: \.self) { line in
+                Text(line)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .panelStyle(background: Color(red: 0.97, green: 0.99, blue: 0.90), foreground: .black)
+    }
+
+    private func seedReviewDrafts(from items: [ReviewQueueCard]) {
+        for item in items where reviewDrafts[item.id] == nil {
+            reviewDrafts[item.id] = item.predictedFields.joined(separator: "\n")
+        }
+        let activeIDs = Set(items.map(\.id))
+        reviewDrafts = reviewDrafts.filter { activeIDs.contains($0.key) }
+    }
+
+    private func reviewDraftBinding(for item: ReviewQueueCard) -> Binding<String> {
+        Binding(
+            get: {
+                reviewDrafts[item.id] ?? item.predictedFields.joined(separator: "\n")
+            },
+            set: { newValue in
+                reviewDrafts[item.id] = newValue
+            }
+        )
     }
 }
 

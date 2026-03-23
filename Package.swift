@@ -30,6 +30,9 @@ let package = Package(
             dependencies: ["MINDProtocol", "MINDSchemas", "MINDRecipes"],
             resources: [
                 .process("Resources")
+            ],
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
             ]
         ),
         .target(

@@ -579,6 +579,7 @@ private enum ObservationBatchFieldMapper {
         frame: FrameContext,
         recipe: GUIRecipe
     ) -> ObservationBatch {
+        let canonicalFields = canonicalize(fields: fields, for: recipe)
         let capturedAt = frame.keyframe.capturedAt
         let frameID = frame.keyframe.id
 
@@ -588,20 +589,20 @@ private enum ObservationBatchFieldMapper {
 
         switch recipe.platform {
         case .wechat:
-            if let participant = fields["participant"] {
+            if let participant = canonicalFields["participant_name"] {
                 texts.append(textObservation(frameID: frameID, capturedAt: capturedAt, role: "participant", text: participant, confidence: 0.97))
             }
-            if let message = fields["message"] {
+            if let message = canonicalFields["message_text"] {
                 texts.append(textObservation(frameID: frameID, capturedAt: capturedAt, role: "message", text: message, confidence: 0.94))
             }
-            if let fileName = fields["attachment_filename"] ?? fields["file"] {
+            if let fileName = canonicalFields["attachment_filename"] {
                 fileReferences.append(
                     FileReferenceObservation(
                         id: identifier(prefix: "file", frameID: frameID, suffix: sanitize(fileName)),
                         frameID: frameID,
                         observedAt: capturedAt,
                         fileName: fileName,
-                        resolvedPath: fields["path"],
+                        resolvedPath: canonicalFields["path"],
                         mimeType: mimeType(for: fileName),
                         confidence: 0.95
                     )
@@ -620,7 +621,7 @@ private enum ObservationBatchFieldMapper {
 
         case .alipay, .meituan, .didi:
             for role in ["merchant_name", "merchant", "amount", "currency", "occurred_at", "order_title", "route"] {
-                if let value = fields[role] {
+                if let value = canonicalFields[role] {
                     let normalizedRole = role == "merchant_name" ? "merchant" : role
                     texts.append(
                         textObservation(
@@ -636,7 +637,7 @@ private enum ObservationBatchFieldMapper {
 
         case .douyin, .kuaishou, .xiaohongshu, .channels:
             for role in ["title", "collected_at", "like_count", "permalink"] {
-                if let value = fields[role] {
+                if let value = canonicalFields[role] {
                     texts.append(
                         textObservation(
                             frameID: frameID,
@@ -654,7 +655,7 @@ private enum ObservationBatchFieldMapper {
                     frameID: frameID,
                     observedAt: capturedAt,
                     kind: .favoriteContent,
-                    targetLabel: fields["title"],
+                    targetLabel: canonicalFields["title"],
                     confidence: 0.89
                 )
             )
@@ -679,12 +680,42 @@ private enum ObservationBatchFieldMapper {
             platform: recipe.platform,
             pageKind: recipe.pageKind,
             recipeID: recipe.id,
+            recipeVersion: recipe.version,
             capturedAt: capturedAt,
+            extractedFields: canonicalFields,
             texts: texts,
             events: events,
             fileReferences: fileReferences,
             confidence: confidence(for: texts, files: fileReferences)
         )
+    }
+
+    private static func canonicalize(fields: [String: String], for recipe: GUIRecipe) -> [String: String] {
+        var canonical = fields
+
+        switch recipe.platform {
+        case .wechat:
+            if canonical["participant_name"] == nil {
+                canonical["participant_name"] = fields["participant"]
+            }
+            if canonical["message_text"] == nil {
+                canonical["message_text"] = fields["message"]
+            }
+            if canonical["attachment_filename"] == nil {
+                canonical["attachment_filename"] = fields["file"]
+            }
+        case .alipay, .meituan, .didi:
+            if canonical["merchant_name"] == nil {
+                canonical["merchant_name"] = fields["merchant"]
+            }
+        case .douyin, .kuaishou, .xiaohongshu, .channels, .manual:
+            break
+        }
+
+        return canonical.compactMapValues { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
     }
 
     private static func textObservation(

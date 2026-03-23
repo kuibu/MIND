@@ -1,5 +1,6 @@
 import XCTest
 import MINDAppSupport
+import MINDRecipes
 import MINDProtocol
 import MINDSchemas
 import MINDServices
@@ -222,6 +223,223 @@ final class MINDPipelinesTests: XCTestCase {
 
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results.first?.fileName, "宇树G1人形机器人操作经验手册.pdf")
+    }
+
+    func testSQLiteCanonicalStorePersistsCommittedResources() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let store = SQLiteCanonicalStore(fileURL: tempDirectory.appendingPathComponent("canonical-store.sqlite"))
+        let coordinator = LiveIngestCoordinator(store: store, extractor: HeuristicVisionExtractor(), now: {
+            self.date("2026-03-22T00:00:00+08:00")
+        })
+
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date("2026-03-20T08:58:00+08:00"),
+            sessionID: "sqlite-wechat",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+        _ = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date("2026-03-20T08:58:03+08:00"),
+                sessionID: "sqlite-wechat",
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: .wechat,
+                frameID: "frame-1",
+                note: CaptureIntentPreset.wechatAttachment.demoFrameHints[0],
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/frame-1.jpg"
+        )
+        _ = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-20T08:58:05+08:00"),
+            sessionID: "sqlite-wechat",
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat
+        ))
+
+        let loadedRepository = try store.load()
+        let pipeline = AttachmentSearchPipeline(repository: loadedRepository)
+        let results = pipeline.run(
+            participantName: "陈攀",
+            fileNameQuery: "宇树G1人形机器人操作经验手册.pdf"
+        )
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.fileName, "宇树G1人形机器人操作经验手册.pdf")
+    }
+
+    func testLiveIngestCoordinatorQueuesLowConfidenceReviewAndRetainsEvidence() {
+        let coordinator = LiveIngestCoordinator(store: nil, extractor: HeuristicVisionExtractor(), now: {
+            self.date("2026-03-22T00:00:00+08:00")
+        })
+        let sessionID = "review-wechat"
+
+        _ = coordinator.startSession(from: StreamMessage(
+            kind: .startSession,
+            sentAt: date("2026-03-20T08:58:00+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat,
+            note: CaptureIntentPreset.wechatAttachment.sessionNote
+        ))
+
+        let frameUpdate = coordinator.ingestKeyframe(
+            from: StreamMessage(
+                kind: .keyframe,
+                sentAt: date("2026-03-20T08:58:03+08:00"),
+                sessionID: sessionID,
+                deviceID: "iphone-1",
+                deviceName: "A 的 iPhone",
+                platformHint: .wechat,
+                frameID: "frame-review-1",
+                note: """
+                message=把手册发你了
+                file=宇树G1人形机器人操作经验手册.pdf
+                path=/Users/a/Downloads/unitree-g1-manual.pdf
+                """,
+                chunkSequence: 1
+            ),
+            imagePath: "/tmp/review-frame-1.jpg"
+        )
+
+        XCTAssertEqual(frameUpdate?.reviewItems.count, 1)
+        XCTAssertEqual(frameUpdate?.reviewItems.first?.missingRequiredFields, ["participant_name"])
+
+        let completion = coordinator.stopSession(from: StreamMessage(
+            kind: .stopSession,
+            sentAt: date("2026-03-20T08:58:05+08:00"),
+            sessionID: sessionID,
+            deviceID: "iphone-1",
+            deviceName: "A 的 iPhone",
+            platformHint: .wechat
+        ))
+
+        XCTAssertEqual(completion?.retainedEvidencePaths, ["/tmp/review-frame-1.jpg"])
+
+        guard let reviewID = completion?.reviewItems.first?.id else {
+            return XCTFail("Expected review item")
+        }
+        let replaySample = coordinator.replaySample(
+            forReviewID: reviewID,
+            expectedFields: [
+                "participant_name": "陈攀",
+                "message_text": "把手册发你了",
+                "attachment_filename": "宇树G1人形机器人操作经验手册.pdf"
+            ]
+        )
+
+        XCTAssertEqual(replaySample?.recipeID, DefaultRecipes.wechatConversation.id)
+        XCTAssertEqual(replaySample?.expectedFields["participant_name"], "陈攀")
+
+        coordinator.resolveReviewItem(reviewID)
+        XCTAssertTrue(coordinator.reviewItems().isEmpty)
+    }
+
+    func testRecipeEvaluationHarnessComputesFieldAccuracy() throws {
+        let registry = RecipeRegistry(recipes: [DefaultRecipes.alipayExpenseReceipt])
+        let harness = RecipeEvaluationHarness(extractor: HeuristicVisionExtractor(), recipeRegistry: registry)
+        let samples = [
+            RecipeReplaySample(
+                id: "sample-1",
+                recipeID: DefaultRecipes.alipayExpenseReceipt.id,
+                recipeVersion: DefaultRecipes.alipayExpenseReceipt.version,
+                frame: FrameContext(
+                    keyframe: Keyframe(
+                        id: "frame-sample-1",
+                        sessionID: "session-sample-1",
+                        ordinal: 1,
+                        capturedAt: date("2026-03-17T10:15:00+08:00"),
+                        sourcePlatform: .alipay,
+                        imagePath: "/tmp/sample-1.jpg",
+                        transcriptHint: CaptureIntentPreset.alipayExpense.demoFrameHints[0]
+                    )
+                ),
+                expectedFields: [
+                    "amount": "38.0",
+                    "merchant_name": "Manner Coffee",
+                    "occurred_at": "2026-03-17T10:15:00+08:00",
+                    "order_title": "咖啡"
+                ]
+            ),
+            RecipeReplaySample(
+                id: "sample-2",
+                recipeID: DefaultRecipes.alipayExpenseReceipt.id,
+                recipeVersion: DefaultRecipes.alipayExpenseReceipt.version,
+                frame: FrameContext(
+                    keyframe: Keyframe(
+                        id: "frame-sample-2",
+                        sessionID: "session-sample-2",
+                        ordinal: 1,
+                        capturedAt: date("2026-03-17T10:15:00+08:00"),
+                        sourcePlatform: .alipay,
+                        imagePath: "/tmp/sample-2.jpg",
+                        transcriptHint: CaptureIntentPreset.alipayExpense.demoFrameHints[0]
+                    )
+                ),
+                expectedFields: [
+                    "amount": "39.0",
+                    "merchant_name": "Manner Coffee",
+                    "occurred_at": "2026-03-17T10:15:00+08:00",
+                    "order_title": "咖啡"
+                ]
+            )
+        ]
+
+        let reports = try harness.evaluate(samples: samples)
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertEqual(reports.first?.sampleCount, 2)
+        XCTAssertEqual(reports.first?.fieldSummaries.first(where: { $0.fieldName == "amount" })?.matchedCount, 1)
+        XCTAssertEqual(reports.first?.fieldSummaries.first(where: { $0.fieldName == "merchant_name" })?.matchedCount, 2)
+    }
+
+    func testRecipeDatasetStorePersistsSamplesAndReports() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let datasetStore = RecipeDatasetStore(rootURL: tempDirectory)
+        let sample = RecipeReplaySample(
+            id: "dataset-sample-1",
+            recipeID: DefaultRecipes.meituanExpenseReceipt.id,
+            recipeVersion: DefaultRecipes.meituanExpenseReceipt.version,
+            frame: FrameContext(
+                keyframe: Keyframe(
+                    id: "frame-dataset-1",
+                    sessionID: "session-dataset-1",
+                    ordinal: 1,
+                    capturedAt: date("2026-03-19T20:00:00+08:00"),
+                    sourcePlatform: .meituan,
+                    imagePath: "/tmp/dataset-1.jpg",
+                    transcriptHint: CaptureIntentPreset.meituanExpense.demoFrameHints[0]
+                )
+            ),
+            expectedFields: [
+                "amount": "56.0",
+                "merchant_name": "海底捞",
+                "occurred_at": "2026-03-19T20:00:00+08:00",
+                "order_title": "火锅晚餐"
+            ]
+        )
+
+        try datasetStore.save(sample: sample)
+        let loadedSamples = try datasetStore.loadSamples()
+        XCTAssertEqual(loadedSamples.count, 1)
+        XCTAssertEqual(loadedSamples.first?.id, sample.id)
+
+        let harness = RecipeEvaluationHarness(
+            extractor: HeuristicVisionExtractor(),
+            recipeRegistry: RecipeRegistry(recipes: [DefaultRecipes.meituanExpenseReceipt])
+        )
+        let reports = try datasetStore.evaluate(using: harness)
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertEqual(try datasetStore.loadReports().first?.recipeID, DefaultRecipes.meituanExpenseReceipt.id)
     }
 
     private func makeRepository() -> InMemoryMINDRepository {

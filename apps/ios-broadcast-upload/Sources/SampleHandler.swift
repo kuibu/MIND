@@ -8,7 +8,7 @@ import MINDAppSupport
 import MINDProtocol
 
 final class SampleHandler: RPBroadcastSampleHandler {
-    private let relayClient = BroadcastRelayClient()
+    private let relayClient = ReliableStreamClient()
     private let settingsStore = CaptureSharedSettingsStore()
     private let ciContext = CIContext()
 
@@ -32,13 +32,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
         let sessionID = CaptureSessionID(rawValue: "broadcast-\(Int(Date().timeIntervalSince1970))")
         currentSessionID = sessionID
         frameIndex = 0
+        let deviceID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+        let deviceName = UIDevice.current.name + " Broadcast"
+
+        relayClient.updateResumeContext(
+            ReliableStreamClient.ResumeContext(
+                sessionID: sessionID.rawValue,
+                deviceID: deviceID,
+                deviceName: deviceName,
+                platformHint: currentPreset.platform,
+                note: "broadcast_extension"
+            )
+        )
 
         relayClient.send(
             StreamMessage(
                 kind: .startSession,
                 sessionID: sessionID.rawValue,
-                deviceID: UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString,
-                deviceName: UIDevice.current.name + " Broadcast",
+                deviceID: deviceID,
+                deviceName: deviceName,
                 platformHint: currentPreset.platform,
                 note: currentPreset.sessionNote + "\nmode=broadcast_extension"
             )
@@ -51,7 +63,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     override func broadcastFinished() {
         guard let currentSessionID = currentSessionID else {
-            relayClient.stop()
+            relayClient.disconnect()
             return
         }
 
@@ -65,7 +77,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
                 note: "broadcast finished"
             )
         )
-        relayClient.stop()
+        relayClient.updateResumeContext(nil)
+        relayClient.disconnect(after: 0.8)
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
@@ -114,40 +127,5 @@ final class SampleHandler: RPBroadcastSampleHandler {
         let ciImage = CIImage(cvPixelBuffer: imageBuffer)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         return ciContext.jpegRepresentation(of: ciImage, colorSpace: colorSpace)
-    }
-}
-
-private final class BroadcastRelayClient {
-    private let queue = DispatchQueue(label: "mind.broadcast.upload.connection")
-    private var connection: NWConnection?
-
-    func connect(to relay: CaptureRelayConfiguration) {
-        connection?.cancel()
-        let endpoint = NWEndpoint.service(
-            name: relay.serviceName,
-            type: BonjourServiceDescriptor.type,
-            domain: relay.serviceDomain,
-            interface: nil
-        )
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        self.connection = connection
-        connection.start(queue: queue)
-    }
-
-    func send(_ message: StreamMessage) {
-        guard let connection = connection else {
-            return
-        }
-        do {
-            let data = try StreamMessageCodec.encodeLine(message)
-            connection.send(content: data, completion: .contentProcessed { _ in })
-        } catch {
-            connection.cancel()
-        }
-    }
-
-    func stop() {
-        connection?.cancel()
-        connection = nil
     }
 }
